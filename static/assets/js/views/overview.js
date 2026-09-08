@@ -2,6 +2,8 @@ window.Views = window.Views || {};
 
 window.Views.overview = {
   setup: function () {
+    var ref = Vue.ref;
+    var watch = Vue.watch;
     var stats = Store.stats;
     var cards = [
       { key: 'documents', label: '课程文档' },
@@ -10,6 +12,14 @@ window.Views.overview = {
       { key: 'chunks', label: '文本分块' },
       { key: 'sessions', label: '问答会话' },
     ];
+
+    function onActivate(fn) {
+      watch(Store.currentView, function (view) { if (view === 'overview') fn(); });
+      if (Store.currentView.value === 'overview') fn();
+    }
+
+    onActivate(function () { Store.refreshStats(); });
+
     return { stats: stats, cards: cards };
   },
   template: `

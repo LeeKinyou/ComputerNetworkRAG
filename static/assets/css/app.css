@@ -137,3 +137,31 @@ table.doc-table th, table.doc-table td {
   text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border-color);
 }
 table.doc-table th { font-size: 12px; color: var(--text-secondary); font-weight: 500; }
+.doc-name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-actions { white-space: nowrap; }
+.doc-actions .btn + .btn { margin-left: 6px; }
+
+.status-badge {
+  display: inline-block; padding: 2px 10px; border-radius: 999px;
+  font-size: 12px; border: 1px solid transparent; white-space: nowrap;
+}
+.st-pending { background: var(--bg-color); color: var(--text-secondary); border-color: var(--border-color); }
+.st-parsed { background: #F0F9FF; color: var(--accent-deep); border-color: #BFE3F5; }
+.st-indexed { background: #F0FAF0; color: var(--observe-deep); border-color: #CDEBCF; }
+.st-failed { background: #FDF1F1; color: #B94A4C; border-color: #F3CFCF; }
+.st-unsupported { background: #FFF8EC; color: #9A6B2F; border-color: #F0DDBF; }
+
+.error-bar {
+  margin-top: 10px; padding: 8px 12px; border-radius: 8px;
+  background: #FDF1F1; border: 1px solid #F3CFCF; color: #B94A4C; font-size: 13px;
+}
+.error-row { cursor: pointer; }
+.error-row td { color: #B94A4C; font-size: 12.5px; }
+.error-toggle { margin-right: 8px; font-size: 12px; color: var(--text-secondary); }
+
+.btn.btn-sm { padding: 4px 10px; font-size: 12.5px; border-radius: 6px; }
+.btn.btn-danger { color: #B94A4C; }
+.btn.btn-danger:hover { border-color: var(--error); }
+.dropzone.dragging { border-color: var(--accent); background: #F0F9FF; }
+.dropzone { cursor: pointer; }
+.dropzone input { cursor: pointer; }

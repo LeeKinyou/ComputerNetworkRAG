@@ -9,6 +9,12 @@
     stats: ref({}),
   };
 
+  Store.refreshStats = function () {
+    API.getJSON('/api/stats').then(function (data) {
+      Store.stats.value = data;
+    }).catch(function () { /* 状态点已提示 */ });
+  };
+
   var TABS = [
     { key: 'overview', label: '概览' },
     { key: 'graph', label: '知识图谱' },

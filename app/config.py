@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     HITL_ENABLED: bool = False
     APPROVAL_TOOLS: str = "ping_host,http_probe"
 
-    LLM_TIMEOUT: int = 60
+    LLM_TIMEOUT: int = 150
     TOOL_TIMEOUT: int = 3
     UPLOAD_MAX_MB: int = 20
 
