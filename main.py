@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.api.documents import router as documents_router
+from app.api.graph import router as graph_router
 from app.api.health import router as health_router
 from app.config import get_settings
 from app.rag import lightrag_factory
@@ -42,6 +43,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="计算机网络课程智能问答系统", lifespan=lifespan)
 app.include_router(health_router)
 app.include_router(documents_router)
+app.include_router(graph_router)
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
 

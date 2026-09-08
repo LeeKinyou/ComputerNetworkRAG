@@ -1,8 +1,8 @@
 import logging
 
 from fastapi import APIRouter, File, UploadFile
-from fastapi.responses import JSONResponse
 
+from app.api.common import error_response as _error
 from app.parsers import UnsupportedFormatError
 from app.rag import lightrag_factory
 from app.services.ingestion_service import FileTooLargeError, get_ingestion_service
@@ -10,13 +10,6 @@ from app.storage.sqlite_repo import get_repo
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["documents"])
-
-
-def _error(status: int, code: str, message: str, detail: str | None = None) -> JSONResponse:
-    return JSONResponse(
-        status_code=status,
-        content={"error_code": code, "message": message, "detail": detail},
-    )
 
 
 @router.post("/documents/upload", status_code=202)

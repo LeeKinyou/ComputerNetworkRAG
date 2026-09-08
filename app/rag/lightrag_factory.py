@@ -137,6 +137,15 @@ async def get_doc_status(doc_id: str) -> dict | None:
         return None
 
 
+async def get_chunk(chunk_id: str) -> dict | None:
+    """读取分块元数据（含 file_path/full_doc_id），实体聚合丢失 file_path 时用于反查。"""
+    try:
+        return await get_lightrag().text_chunks.get_by_id(chunk_id)
+    except Exception:
+        logger.warning("读取分块 %s 失败", chunk_id, exc_info=True)
+        return None
+
+
 async def aquery(question: str, mode: str, conversation_history=None) -> str:
     param = QueryParam(
         mode=mode,
