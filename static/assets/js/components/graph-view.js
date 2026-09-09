@@ -151,6 +151,20 @@ window.Components.graphView = {
       chart.setOption(buildOption());
     }
 
+    // 持久邻接高亮：选中节点及其一跳邻居保持 emphasis，其余淡出；
+    // 抽屉里点关联实体时焦点随之切换（downplay 旧焦点 → highlight 新焦点）
+    function applyFocus(name) {
+      if (!chart) return;
+      chart.dispatchAction({ type: 'downplay', seriesIndex: 0 });
+      if (name) {
+        setTimeout(function () {
+          if (chart && props.nodes.some(function (n) { return n.id === name; })) {
+            chart.dispatchAction({ type: 'highlight', seriesIndex: 0, name: name });
+          }
+        }, 0);
+      }
+    }
+
     onMounted(function () {
       chart = echarts.init(el.value);
       chart.on('click', function (params) {
@@ -205,7 +219,7 @@ window.Components.graphView = {
     function relayout() { frozenPos = null; render(); }
 
     watch(function () { return props.nodes; }, function () { frozenPos = null; render(); });
-    watch(function () { return props.selectedName; }, renderSoft);
+    watch(function () { return props.selectedName; }, function (name) { renderSoft(); applyFocus(name); });
 
     return { el: el, relayout: relayout, resize: resize };
   },

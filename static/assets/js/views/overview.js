@@ -50,13 +50,17 @@ window.Views.overview = {
       var w = miniEl.value.offsetWidth;
       var h = miniEl.value.offsetHeight;
       if (w && (chart.getWidth() !== w || chart.getHeight() !== h)) chart.resize();
+      // 只给度数最高的前 10 个核心实体标名称，防止小卡内标签互相遮盖
+      var labelSet = {};
+      miniNodes.value.slice().sort(function (a, b) { return (b.degree || 0) - (a.degree || 0); })
+        .slice(0, 10).forEach(function (n) { labelSet[n.id] = true; });
       var nodes = miniNodes.value.map(function (n) {
         var item = {
           id: n.id,
           name: n.name,
-          symbolSize: 6 + Math.min(8, (n.degree || 0) * 1.5),
+          symbolSize: 5 + Math.min(6, (n.degree || 0) * 1.2),
           itemStyle: { color: colorOf(n.type) },
-          label: { show: (n.degree || 0) >= 3 },  // 小卡只标核心实体，避免标签糊成一团
+          label: { show: !!labelSet[n.id] },
         };
         if (miniFrozen) {
           var fp = miniFrozen[n.id] || miniFrozen[n.name];
@@ -75,7 +79,7 @@ window.Views.overview = {
           links: links,
           roam: false,
           silent: true,   // 只读：不响应交互，点击入口交给"进入知识图谱"按钮
-          force: { repulsion: 220, edgeLength: [34, 88], gravity: 0.08, layoutAnimation: false },
+          force: { repulsion: 300, edgeLength: [40, 100], gravity: 0.06, layoutAnimation: false },
           label: { show: true, fontSize: 11, color: '#1A1B1C' },
         }],
       }, true);
