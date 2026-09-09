@@ -10,6 +10,7 @@ from app.api.documents import router as documents_router
 from app.api.graph import router as graph_router
 from app.api.health import router as health_router
 from app.api.rag import router as rag_router
+from app.api.sessions import router as sessions_router
 from app.config import get_settings
 from app.rag import lightrag_factory
 from app.services.ingestion_service import get_ingestion_service, init_ingestion_service
@@ -48,6 +49,7 @@ app.include_router(health_router)
 app.include_router(documents_router)
 app.include_router(graph_router)
 app.include_router(rag_router)
+app.include_router(sessions_router)
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
 

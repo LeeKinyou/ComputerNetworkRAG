@@ -43,6 +43,8 @@
         syncFromHash();
         window.addEventListener('hashchange', syncFromHash);
         refreshHealth();
+        // 文档 06 §5：断网/API 异常时顶部状态点变红
+        setInterval(refreshHealth, 15000);
       });
 
       var healthClass = computed(function () {
