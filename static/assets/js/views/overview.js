@@ -54,8 +54,9 @@ window.Views.overview = {
         var item = {
           id: n.id,
           name: n.name,
-          symbolSize: 8 + Math.min(16, (n.degree || 0) * 2),
+          symbolSize: 6 + Math.min(8, (n.degree || 0) * 1.5),
           itemStyle: { color: colorOf(n.type) },
+          label: { show: (n.degree || 0) >= 3 },  // 小卡只标核心实体，避免标签糊成一团
         };
         if (miniFrozen) {
           var fp = miniFrozen[n.id] || miniFrozen[n.name];
@@ -74,7 +75,7 @@ window.Views.overview = {
           links: links,
           roam: false,
           silent: true,   // 只读：不响应交互，点击入口交给"进入知识图谱"按钮
-          force: { repulsion: 110, edgeLength: [22, 64], gravity: 0.12, layoutAnimation: false },
+          force: { repulsion: 220, edgeLength: [34, 88], gravity: 0.08, layoutAnimation: false },
           label: { show: true, fontSize: 11, color: '#1A1B1C' },
         }],
       }, true);
