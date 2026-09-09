@@ -20,6 +20,12 @@ class RAGChatRequest(BaseModel):
     session_id: str | None = None
 
 
+class AgentChatRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=4000)
+    session_id: str | None = None
+    tools: list[str] | None = None  # P1 工具子集，P0 缺省全部启用
+
+
 class DocumentMeta(BaseModel):
     doc_id: str
     filename: str

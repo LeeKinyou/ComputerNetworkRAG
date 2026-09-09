@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from app.schemas import DocumentMeta, MessageRecord, SessionMeta, StepRecord
+from app.schemas import DocumentMeta, MessageRecord, RunRecord, SessionMeta, StepRecord
 
 
 class Repository(ABC):
@@ -52,6 +52,9 @@ class Repository(ABC):
     async def finish_run(
         self, run_id: str, status: str, answer: str | None, steps_count: int
     ) -> None: ...
+
+    @abstractmethod
+    async def get_run(self, run_id: str) -> RunRecord | None: ...
 
     @abstractmethod
     async def get_run_steps(self, run_id: str) -> list[StepRecord]: ...

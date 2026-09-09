@@ -5,7 +5,7 @@ from pathlib import Path
 
 import aiosqlite
 
-from app.schemas import DocumentMeta, MessageRecord, SessionMeta, StepRecord
+from app.schemas import DocumentMeta, MessageRecord, RunRecord, SessionMeta, StepRecord
 from app.storage.repository import Repository
 
 DDL = """
@@ -241,6 +241,13 @@ class SqliteRepository(Repository):
             (status, answer, steps_count, now(), run_id),
         )
         await self._conn().commit()
+
+    async def get_run(self, run_id: str) -> RunRecord | None:
+        async with self._conn().execute(
+            "SELECT * FROM agent_runs WHERE run_id = ?", (run_id,)
+        ) as cur:
+            row = await cur.fetchone()
+        return RunRecord(**dict(row)) if row else None
 
     async def get_run_steps(self, run_id: str) -> list[StepRecord]:
         async with self._conn().execute(

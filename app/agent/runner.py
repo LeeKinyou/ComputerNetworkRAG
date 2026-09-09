@@ -46,13 +46,18 @@ def _parse_tool_message(tm) -> dict:
     }
 
 
-async def run_agent(agent, question: str, run_id: str) -> AsyncIterator[Event]:
+async def run_agent(
+    agent, question: str, run_id: str, session_id: str | None = None
+) -> AsyncIterator[Event]:
     settings = get_settings()
     cfg = {
         "configurable": {"thread_id": run_id},
         "recursion_limit": settings.AGENT_RECURSION_LIMIT,
     }
-    yield Event(name="meta", data={"run_id": run_id})
+    meta = {"run_id": run_id}
+    if session_id:
+        meta["session_id"] = session_id
+    yield Event(name="meta", data=meta)
 
     step_no = 0
     answer_parts: list[str] = []

@@ -32,3 +32,37 @@ async def get_session(session_id: str):
             for m in messages
         ],
     }
+
+
+@router.get("/sessions/{session_id}/runs/{run_id}")
+async def get_session_run(session_id: str, run_id: str):
+    """单次运行回放（04 §6.4）：run 概要 + 步骤列表，与实时 SSE 复用同一时间线。"""
+    repo = get_repo()
+    run = await repo.get_run(run_id)
+    if run is None or run.session_id != session_id:
+        return error_response(404, "RUN_NOT_FOUND", "运行记录不存在")
+    steps = await repo.get_run_steps(run_id)
+    return {
+        "run": {
+            "run_id": run.run_id,
+            "question": run.question,
+            "final_answer": run.final_answer,
+            "status": run.status,
+            "steps_count": run.steps_count,
+            "started_at": run.started_at,
+            "finished_at": run.finished_at,
+        },
+        "steps": [
+            {
+                "step_no": s.step_no,
+                "kind": s.kind,
+                "tool_name": s.tool_name,
+                "tool_args": s.tool_args,
+                "content": s.content,
+                "structured": s.structured,
+                "status": s.status,
+                "elapsed_ms": s.elapsed_ms,
+            }
+            for s in steps
+        ],
+    }

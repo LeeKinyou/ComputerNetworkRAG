@@ -60,6 +60,15 @@ async def collect(agent, question, run_id="r_test"):
     return [ev async for ev in run_agent(agent, question, run_id=run_id)]
 
 
+async def test_meta_includes_session_id(agent_env):
+    agent = await make_agent([AIMessage(content="直接回答。")])
+    events = [
+        ev async for ev in run_agent(agent, "你好", run_id="r_m1", session_id="s_m1")
+    ]
+    assert events[0].name == "meta"
+    assert events[0].data == {"run_id": "r_m1", "session_id": "s_m1"}
+
+
 async def test_single_tool_flow(agent_env):
     agent = await make_agent(
         [

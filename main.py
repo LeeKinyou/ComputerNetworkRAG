@@ -6,15 +6,19 @@ import uvicorn
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from app.api.agent import router as agent_router
 from app.api.documents import router as documents_router
 from app.api.graph import router as graph_router
 from app.api.health import router as health_router
 from app.api.rag import router as rag_router
 from app.api.sessions import router as sessions_router
+from app.agent.builder import build_agent, close_checkpointer, open_checkpointer
+from app.agent.tools import create_registry
 from app.config import get_settings
 from app.rag import lightrag_factory
+from app.services.agent_service import get_agent_service, init_agent_service
 from app.services.ingestion_service import get_ingestion_service, init_ingestion_service
-from app.services.rag_service import init_rag_service
+from app.services.rag_service import get_rag_service, init_rag_service
 from app.storage.sqlite_repo import get_repo, init_repo
 
 BASE_DIR = Path(__file__).parent
@@ -38,8 +42,16 @@ async def lifespan(app: FastAPI):
         logging.getLogger(__name__).warning(
             "LightRAG 初始化失败，知识库功能暂不可用：%s", exc
         )
+    try:
+        await open_checkpointer()
+        init_agent_service(repo, build_agent(create_registry(get_rag_service())))
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            "Agent 初始化失败，智能体功能暂不可用：%s", exc
+        )
     yield
     await get_ingestion_service().close()
+    await close_checkpointer()
     await lightrag_factory.close_lightrag()
     await repo.close()
 
@@ -49,6 +61,7 @@ app.include_router(health_router)
 app.include_router(documents_router)
 app.include_router(graph_router)
 app.include_router(rag_router)
+app.include_router(agent_router)
 app.include_router(sessions_router)
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
