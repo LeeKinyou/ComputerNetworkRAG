@@ -1,6 +1,9 @@
 window.Components = window.Components || {};
 
 // 类型配色表：模块级导出，概览页迷你图复用同一套（06 §2：设计令牌全局唯一来源）
+// harvest：从 echarts 内部 graph 模型读取收敛后的节点坐标。
+// 供"力导布局收敛后冻结坐标"使用——layout 切到 'none' 后 roam 缩放是纯视口变换，
+// 不会出现"缩放后节点聚拢、连线射向旧坐标空白区"的点线脱钩问题。
 window.Components.graphView = {
   TYPE_COLORS: {
     '协议': '#2B6E94',
@@ -11,6 +14,28 @@ window.Components.graphView = {
     '性能指标': '#2F8A83',
     '概念': '#5B7183',
     'Other': '#98A2AB',
+  },
+  harvest: function (chart) {
+    if (!chart) return null;
+    try {
+      var series = chart.getModel().getSeriesByIndex(0);
+      var graph = series && series.getGraph();
+      if (!graph) return null;
+      var pos = null;
+      graph.eachNode(function (node) {
+        // echarts 5 的 getLayout() 返回 [x, y] 数组（兼容 {x, y} 形态）；
+        // 部分构建里 node.name 为 undefined，id 恒有值，以 id 为主键
+        var l = node.getLayout();
+        var x = Array.isArray(l) ? l[0] : l && l.x;
+        var y = Array.isArray(l) ? l[1] : l && l.y;
+        var key = node.id != null ? node.id : node.name;
+        if (key != null && typeof x === 'number' && typeof y === 'number') {
+          pos = pos || {};
+          pos[key] = { x: x, y: y };
+        }
+      });
+      return pos;
+    } catch (e) { return null; }
   },
   props: {
     nodes: { type: Array, default: function () { return []; } },
@@ -28,6 +53,9 @@ window.Components.graphView = {
     var el = ref(null);
     var chart = null;
     var sizeObs = null;
+    // 力导收敛后的坐标快照；非 null 时 layout='none' + 节点带 x/y，缩放/平移即纯变换
+    var frozenPos = null;
+    var harvest = window.Components.graphView.harvest;
 
     var TYPE_COLORS = window.Components.graphView.TYPE_COLORS;
     function colorOf(type) { return TYPE_COLORS[type] || '#98A2AB'; }
@@ -47,7 +75,7 @@ window.Components.graphView = {
       var graphNodes = props.nodes.map(function (n) {
         var size = 16 + Math.min(30, (n.degree || 0) * 3);
         var selected = n.id === props.selectedName;
-        return {
+        var item = {
           id: n.id,
           name: n.name,
           category: catIndex[n.type] !== undefined ? catIndex[n.type] : 0,
@@ -58,6 +86,11 @@ window.Components.graphView = {
             borderWidth: selected ? 2 : 0,
           },
         };
+        if (frozenPos) {
+          var fp = frozenPos[n.id] || frozenPos[n.name];
+          if (fp) { item.x = fp.x; item.y = fp.y; }
+        }
+        return item;
       });
       var graphEdges = props.edges.map(function (e) {
         return { source: e.source, target: e.target };
@@ -88,7 +121,7 @@ window.Components.graphView = {
         } : undefined,
         series: [{
           type: 'graph',
-          layout: 'force',
+          layout: frozenPos ? 'none' : 'force',
           data: graphNodes,
           links: graphEdges,
           categories: categories,
@@ -112,6 +145,12 @@ window.Components.graphView = {
       chart.setOption(buildOption(), true);
     }
 
+    // 选中态等轻量更新走 merge：不整体替换 option，保留当前缩放/平移视口
+    function renderSoft() {
+      if (!chart) return;
+      chart.setOption(buildOption());
+    }
+
     onMounted(function () {
       chart = echarts.init(el.value);
       chart.on('click', function (params) {
@@ -120,13 +159,36 @@ window.Components.graphView = {
           if (n) ctx.emit('node-click', n);
         }
       });
+      // 力导布局收敛（finished 且所有节点均有坐标）后冻结坐标；
+      // 此后缩放/平移的 finished 不再处理。finished 会在布局早期触发，
+      // 此时多数节点还没有坐标，必须等覆盖完整再冻结
+      chart.on('finished', function () {
+        if (frozenPos || !props.nodes.length) return;
+        setTimeout(function () {
+          if (frozenPos || !chart || !props.nodes.length) return;
+          var pos = harvest(chart);
+          if (pos && Object.keys(pos).length >= props.nodes.length) {
+            frozenPos = pos;
+            render();
+          }
+        }, 0);
+      });
+      // 冻结后拖拽节点：静默更新坐标快照，后续渲染沿用拖后位置
+      if (chart.getZr()) {
+        chart.getZr().on('dragend', function () {
+          if (!frozenPos) return;
+          var pos = harvest(chart);
+          if (pos) frozenPos = pos;
+        });
+      }
       render();
-      // 视图常驻 + v-show：从隐藏切到可见时容器尺寸从 0 变化，
-      // 需要 resize 后重跑力导布局（仅 resize 不会重新布局，节点会挤在左上角）
+      // 视图常驻 + v-show：从隐藏切到可见时容器尺寸从 0 变化，需重新布局；
+      // 冻结坐标是像素坐标，尺寸变化后必须重跑力导，否则整体偏在一侧
       if (typeof ResizeObserver !== 'undefined') {
         sizeObs = new ResizeObserver(function (entries) {
           if (!entries[0].contentRect.width) return;
           chart.resize();
+          frozenPos = null;
           render();
         });
         sizeObs.observe(el.value);
@@ -140,10 +202,10 @@ window.Components.graphView = {
     });
 
     function resize() { if (chart) chart.resize(); }
-    function relayout() { render(); }
+    function relayout() { frozenPos = null; render(); }
 
-    watch(function () { return props.nodes; }, render);
-    watch(function () { return props.selectedName; }, render);
+    watch(function () { return props.nodes; }, function () { frozenPos = null; render(); });
+    watch(function () { return props.selectedName; }, renderSoft);
 
     return { el: el, relayout: relayout, resize: resize };
   },

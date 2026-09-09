@@ -25,6 +25,8 @@ window.Views.overview = {
     var miniError = ref('');
     var chart = null;
     var miniRO = null;
+    var miniFrozen = null;   // 力导收敛后冻结坐标，避免 resize/重渲染时反复洗牌
+    var harvest = window.Components.graphView.harvest;
 
     // echarts 在首帧布局完成前 init 会测到错误宽度（实测 100px），
     // 用 ResizeObserver 保证在真实布局后建图与重渲染
@@ -41,12 +43,17 @@ window.Views.overview = {
       var h = miniEl.value.offsetHeight;
       if (w && (chart.getWidth() !== w || chart.getHeight() !== h)) chart.resize();
       var nodes = miniNodes.value.map(function (n) {
-        return {
+        var item = {
           id: n.id,
           name: n.name,
           symbolSize: 8 + Math.min(16, (n.degree || 0) * 2),
           itemStyle: { color: colorOf(n.type) },
         };
+        if (miniFrozen) {
+          var fp = miniFrozen[n.id] || miniFrozen[n.name];
+          if (fp) { item.x = fp.x; item.y = fp.y; }
+        }
+        return item;
       });
       var links = miniEdges.value.map(function (e) {
         return { source: e.source, target: e.target };
@@ -54,7 +61,7 @@ window.Views.overview = {
       chart.setOption({
         series: [{
           type: 'graph',
-          layout: 'force',
+          layout: miniFrozen ? 'none' : 'force',
           data: nodes,
           links: links,
           roam: false,
@@ -63,11 +70,23 @@ window.Views.overview = {
           label: { show: true, fontSize: 11, color: '#1A1B1C' },
         }],
       }, true);
+      // 力导收敛（所有节点均有坐标）后冻结坐标，缩放/重渲染不再洗牌
+      if (!miniFrozen) {
+        setTimeout(function () {
+          if (miniFrozen || !chart) return;
+          var pos = harvest(chart);
+          if (pos && Object.keys(pos).length >= miniNodes.value.length) {
+            miniFrozen = pos;
+            renderMini();
+          }
+        }, 0);
+      }
     }
 
     function loadMini() {
       miniLoading.value = true;
       miniError.value = '';
+      miniFrozen = null;
       API.getJSON('/api/graph?limit=120').then(function (data) {
         miniNodes.value = data.nodes || [];
         miniEdges.value = data.edges || [];
@@ -95,6 +114,7 @@ window.Views.overview = {
         if (!miniRO && miniEl.value && typeof ResizeObserver !== 'undefined') {
           miniRO = new ResizeObserver(function (entries) {
             if (!entries[0].contentRect.width) return;
+            if (chart && (chart.getWidth() !== entries[0].contentRect.width)) miniFrozen = null;
             renderMini();
           });
           miniRO.observe(miniEl.value);
