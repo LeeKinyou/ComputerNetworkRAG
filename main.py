@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.api.agent import router as agent_router
+from app.api.approval import router as approval_router
 from app.api.documents import router as documents_router
 from app.api.graph import router as graph_router
 from app.api.health import router as health_router
@@ -62,6 +63,7 @@ app.include_router(documents_router)
 app.include_router(graph_router)
 app.include_router(rag_router)
 app.include_router(agent_router)
+app.include_router(approval_router)
 app.include_router(sessions_router)
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 

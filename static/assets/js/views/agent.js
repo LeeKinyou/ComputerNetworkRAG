@@ -6,6 +6,8 @@ var TOOL_CN = {
   lpm_lookup: '路由查表',
   dns_lookup: '域名解析',
   course_rag_query: '课程知识检索',
+  ping_host: '主机连通性探测',
+  http_probe: 'HTTP 探测',
 };
 
 window.Views.agent = {
@@ -83,7 +85,8 @@ window.Views.agent = {
       for (var i = run.groups.length - 1; i >= 0; i--) {
         if (run.groups[i].step_no === d.step_no) { g = run.groups[i]; break; }
       }
-      if (!g) return;
+      // 续跑流的观察可能落在中断前那一轮（该轮组已在），缺组时兜底建组
+      if (!g) { g = { step_no: d.step_no, thought: '', actions: [] }; run.groups.push(g); }
       var obs = {
         status: d.status || 'failed',
         elapsed_ms: d.elapsed_ms || 0,
@@ -96,31 +99,9 @@ window.Views.agent = {
       g.actions.push({ tool: '', tool_cn: '', args: {}, obs: obs });
     }
 
-    // ----- 实时运行 -----
-
-    function send(preset) {
-      var q = String(preset == null ? question.value : preset).trim();
-      if (!q || busy.value) return;
-      question.value = '';
-      busy.value = true;
-      followBottom.value = true;
-      // reactive 而非普通对象：SSE 闭包持原始引用时，普通对象的变更不经过
-      // Vue 代理，不会触发重渲染（实测卡片全部等到 final 才一次性出现）
-      var run = Vue.reactive({
-        runId: '', sessionId: '', question: q,
-        groups: [], answer: '', streaming: true,
-        truncated: false, error: '', collapsed: false,
-      });
-      runs.value.push(run);
-      scrollBottom(true);
-
-      API.postSSE('/api/agent/chat', { question: q, session_id: currentSessionId.value || null }, {
-        meta: function (data) {
-          run.runId = (data && data.run_id) || '';
-          run.sessionId = (data && data.session_id) || '';
-          currentSessionId.value = run.sessionId;
-          loadSessions();
-        },
+    // 首轮与审批续跑共用的 SSE 事件处理：续跑事件追加到同一条时间线（04 §6.5）
+    function streamHandlers(run) {
+      return {
         step_start: function (data) {
           run.groups.push({ step_no: data.step_no, thought: '', actions: [] });
           scrollBottom();
@@ -160,11 +141,64 @@ window.Views.agent = {
         },
         error: function (data) {
           run.streaming = false;
+          run.pending = null;
           run.error = (data && data.message) || '服务异常，请重试';
           busy.value = false;
           scrollBottom();
         },
+      };
+    }
+
+    // ----- 实时运行 -----
+
+    function send(preset) {
+      var q = String(preset == null ? question.value : preset).trim();
+      if (!q || busy.value) return;
+      question.value = '';
+      busy.value = true;
+      followBottom.value = true;
+      // reactive 而非普通对象：SSE 闭包持原始引用时，普通对象的变更不经过
+      // Vue 代理，不会触发重渲染（实测卡片全部等到 final 才一次性出现）
+      var run = Vue.reactive({
+        runId: '', sessionId: '', question: q,
+        groups: [], answer: '', streaming: true,
+        truncated: false, error: '', collapsed: false,
+        pending: null,
       });
+      runs.value.push(run);
+      scrollBottom(true);
+
+      var handlers = streamHandlers(run);
+      handlers.meta = function (data) {
+        run.runId = (data && data.run_id) || '';
+        run.sessionId = (data && data.session_id) || '';
+        currentSessionId.value = run.sessionId;
+        loadSessions();
+      };
+      // 审批中断：当前流正常结束（无 final），行动卡下插入琥珀色审批条
+      handlers.interrupt = function (data) {
+        run.streaming = false;
+        run.pending = {
+          step_no: data.step_no, tool: data.tool || '',
+          args: data.args || {}, argsText: JSON.stringify(data.args || {}, null, 2),
+        };
+        busy.value = false;
+        scrollBottom(true);
+      };
+      API.postSSE('/api/agent/chat', { question: q, session_id: currentSessionId.value || null }, handlers);
+    }
+
+    // 审批决策（06 §4.4.1）：POST /resume，新流首帧 resumed，事件追加到原时间线
+    function onDecide(run, payload) {
+      if (busy.value || !run.pending) return;
+      busy.value = true;
+      followBottom.value = true;
+      var handlers = streamHandlers(run);
+      handlers.resumed = function () { run.pending = null; scrollBottom(); };
+      API.postSSE('/api/agent/runs/' + run.runId + '/resume', {
+        decision: payload.decision,
+        edited_args: payload.decision === 'edit' ? payload.args : null,
+      }, handlers);
     }
 
     function retry() {
@@ -235,10 +269,25 @@ window.Views.agent = {
               question: p.run.question,
               groups: [], answer: p.run.final_answer || '',
               streaming: false, truncated: false, error: '', collapsed: false,
+              pending: null,
             };
             run.groups = groupFromSteps(p.steps, run);
             if (!run.answer && p.run.status === 'failed' && !run.error) {
               run.error = '运行失败';
+            }
+            // 待审批运行（03 §3.4）：刷新页面后仍可继续——从最后一个
+            // 没有观察的行动卡片恢复审批条
+            if (p.run.status === 'waiting_approval') {
+              var pend = null;
+              run.groups.forEach(function (g) {
+                (g.actions || []).forEach(function (a) {
+                  if (!a.obs) {
+                    pend = { step_no: g.step_no, tool: a.tool, args: a.args || {},
+                             argsText: JSON.stringify(a.args || {}, null, 2) };
+                  }
+                });
+              });
+              if (pend) run.pending = pend;
             }
             return run;
           });
@@ -275,6 +324,7 @@ window.Views.agent = {
       selectSession: selectSession,
       newSession: newSession,
       send: send,
+      onDecide: onDecide,
       retry: retry,
       onScroll: onScroll,
     };
@@ -309,7 +359,7 @@ window.Views.agent = {
                 <path d="M8 10 L12 6 M40 10 L36 6 M24 4 V8" stroke-linecap="round"/>
               </svg>
               <p>智能体将逐步展示 思考 → 行动 → 观察 的完整推理过程</p>
-              <p class="hint">支持子网计算、路由查表、DNS 解析与课程知识检索</p>
+              <p class="hint">支持子网计算、路由查表、DNS 解析、课程知识检索与主机探测（真实网络操作需人工审批）</p>
               <div class="chip-row">
                 <button v-for="c in chips" :key="c" class="btn btn-sm chip" :disabled="busy"
                         @click="send(c)">{{ c }}</button>
@@ -330,7 +380,9 @@ window.Views.agent = {
                   </div>
                   <div v-show="!run.collapsed" class="run-timeline">
                     <timeline :groups="run.groups" :answer="run.answer"
-                              :streaming="run.streaming" :truncated="run.truncated"></timeline>
+                              :streaming="run.streaming" :truncated="run.truncated"
+                              :pending="run.pending" :disabled="busy"
+                              @decide="onDecide(run, $event)"></timeline>
                   </div>
                 </template>
               </div>

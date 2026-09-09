@@ -1,6 +1,6 @@
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ErrorResponse(BaseModel):
@@ -24,6 +24,19 @@ class AgentChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=4000)
     session_id: str | None = None
     tools: list[str] | None = None  # P1 工具子集，P0 缺省全部启用
+
+
+class ApprovalRequest(BaseModel):
+    """人工审批决策（04 §6.5）：approve 原参 / edit 换参 / reject 拒绝。"""
+
+    decision: Literal["approve", "edit", "reject"]
+    edited_args: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def _edit_needs_args(self):
+        if self.decision == "edit" and self.edited_args is None:
+            raise ValueError("edit 决策必须提供 edited_args")
+        return self
 
 
 class DocumentMeta(BaseModel):

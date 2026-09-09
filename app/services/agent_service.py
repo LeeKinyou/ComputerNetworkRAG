@@ -1,9 +1,10 @@
-"""AgentService：run 生命周期与 trace 落库（03 §3.2、04 §6.2/§6.4）。
+"""AgentService：run 生命周期与 trace 落库（03 §3.2、04 §6.2/§6.4/§6.5）。
 
 事件到库的对应关系：thought/action/observation 各写一行 agent_steps；
-meta/step_start/token 不落步骤表，final 落 agent_runs（status/final_answer）
-并追加 assistant 消息。run 的状态只有 success/failed 两种：客户端中途断开、
-模型异常都会走 failed，保证没有悬挂在 running 的 run。
+meta/step_start/token/interrupt/resumed 不落步骤表，final 落 agent_runs
+（status/final_answer）并追加 assistant 消息。run 的状态有 success/failed/
+waiting_approval 三种：客户端中途断开、模型异常走 failed；审批中断走
+waiting_approval（final_answer 留空），resume 后由续跑流的 final 覆盖。
 """
 
 import anyio
@@ -11,7 +12,12 @@ import asyncio
 import logging
 from typing import AsyncIterator
 
-from app.agent.runner import run_agent
+from app.agent.runner import (
+    NoPendingInterruptError,
+    get_pending_interrupts,
+    resume_agent,
+    run_agent,
+)
 from app.schemas import Event, StepRecord
 from app.services.rag_service import _error_message
 from app.storage.repository import Repository
@@ -43,12 +49,48 @@ class AgentService:
             session_id = await self._repo.create_session("agent", _title(question))
         run_id = await self._repo.create_run(session_id, question)
         await self._repo.add_message(session_id, "user", question, run_id)
+        async for ev in self._stream_run(
+            run_agent(self._agent, question, run_id, session_id), run_id, session_id
+        ):
+            yield ev
 
+    async def assert_resumable(self, run_id: str):
+        """resume 前置校验（04 §6.5）：run 存在、停在等待审批、检查点有中断。"""
+        if self._agent is None:
+            raise RuntimeError("Agent 尚未初始化")
+        run = await self._repo.get_run(run_id)
+        if run is None or run.status != "waiting_approval":
+            raise NoPendingInterruptError("run 不存在或没有待审批的运行")
+        requests = await get_pending_interrupts(self._agent, run_id)
+        if not requests:
+            raise NoPendingInterruptError("检查点中没有待审批的工具调用")
+        return run
+
+    async def stream_resume(
+        self, run_id: str, decision: str, edited_args: dict | None = None
+    ) -> AsyncIterator[Event]:
+        run = await self.assert_resumable(run_id)
+        step_no_start = int(run.steps_count or 0)
+        async for ev in self._stream_run(
+            resume_agent(self._agent, run_id, decision, edited_args, step_no_start),
+            run_id,
+            run.session_id,
+            last_step_no=step_no_start,
+        ):
+            yield ev
+
+    async def _stream_run(
+        self,
+        events: AsyncIterator[Event],
+        run_id: str,
+        session_id: str,
+        last_step_no: int = 0,
+    ) -> AsyncIterator[Event]:
+        """事件落库 + 透传。流式来源可以是首轮 run_agent 或审批后的 resume_agent。"""
         answer_parts: list[str] = []
-        last_step_no = 0
 
         try:
-            async for ev in run_agent(self._agent, question, run_id, session_id):
+            async for ev in events:
                 if ev.name == "thought":
                     last_step_no = max(last_step_no, ev.data.get("step_no") or 0)
                     await self._repo.append_step(
@@ -78,7 +120,7 @@ class AgentService:
                         run_id,
                         StepRecord(
                             run_id=run_id,
-                            step_no=ev.data["step_no"],
+                            step_no=ev.data.get("step_no") or 0,
                             kind="observation",
                             status=ev.data.get("status") or "failed",
                             elapsed_ms=int(ev.data.get("elapsed_ms") or 0),
@@ -88,6 +130,9 @@ class AgentService:
                     )
                 elif ev.name == "token":
                     answer_parts.append(ev.data.get("delta") or "")
+                elif ev.name == "interrupt":
+                    # 审批中断：run 停在 waiting_approval，等 /resume 端点续跑
+                    await self._repo.finish_run(run_id, "waiting_approval", None, last_step_no)
                 elif ev.name == "final":
                     last_step_no = int(ev.data.get("steps_count") or 0)
                     answer = ev.data.get("answer") or ""
@@ -101,9 +146,17 @@ class AgentService:
             # 完成落库后再把取消继续向上抛。
             logger.info("Agent 流中断，标记 run 失败 run=%s", run_id)
             with anyio.CancelScope(shield=True):
-                await self._repo.finish_run(
-                    run_id, "failed", "".join(answer_parts) or None, last_step_no
-                )
+                run = await self._repo.get_run(run_id)
+                if run is not None and run.status == "waiting_approval":
+                    # 中断事件已落库后被断开：保留 waiting_approval，审批仍可继续
+                    logger.info("Agent 流中断于等待审批，保留状态 run=%s", run_id)
+                else:
+                    await self._repo.finish_run(
+                        run_id, "failed", "".join(answer_parts) or None, last_step_no
+                    )
+            raise
+        except NoPendingInterruptError:
+            # resume 前置条件不满足：原样上抛给端点转 409，不改 run 状态
             raise
         except Exception as exc:  # noqa: BLE001 — 任何异常都转 error 事件
             message = _error_message(exc)

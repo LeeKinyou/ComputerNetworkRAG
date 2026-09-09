@@ -8,6 +8,7 @@ from app.agent.registry import ToolRegistry
 from app.agent.tools.course_rag import CourseRagTool
 from app.agent.tools.dns import DnsLookupTool
 from app.agent.tools.lpm import LpmLookupTool
+from app.agent.tools.ping import PingHostTool
 from app.agent.tools.subnet import SubnetCalculatorTool
 
 __all__ = [
@@ -15,6 +16,7 @@ __all__ = [
     "CourseRagTool",
     "DnsLookupTool",
     "LpmLookupTool",
+    "PingHostTool",
     "SubnetCalculatorTool",
 ]
 
@@ -24,6 +26,7 @@ def create_registry(rag_service=None) -> ToolRegistry:
     registry.register(SubnetCalculatorTool())
     registry.register(LpmLookupTool())
     registry.register(DnsLookupTool())
+    registry.register(PingHostTool())
     if rag_service is not None:
         registry.register(CourseRagTool(rag_service))
     return registry

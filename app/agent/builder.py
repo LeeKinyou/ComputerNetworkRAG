@@ -1,13 +1,16 @@
 """create_agent 构建器（03 §3.2）：模型 + 工具适配 + system prompt + checkpointer。
 
 rag_service 不在此注入——course_rag_query 在 create_registry(rag_service) 时
-已构造注入（05 §2.4），builder 只面向 registry。
+已构造注入（05 §2.4），builder 只面向 registry。审批策略定稿为
+HumanInTheLoopMiddleware（03 §3.4 优先第二种）：按工具名粒度中断，只有
+APPROVAL_TOOLS 内的工具暂停等审批，本地纯计算与课程检索不受影响。
 """
 
 from pathlib import Path
 
 import aiosqlite
 from langchain.agents import create_agent
+from langchain.agents.middleware import HumanInTheLoopMiddleware
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
@@ -51,10 +54,22 @@ async def close_checkpointer() -> None:
     _conn = None
 
 
+def _approval_tools() -> dict[str, dict]:
+    """APPROVAL_TOOLS 逗号分隔配置 → HumanInTheLoopMiddleware 的 interrupt_on。"""
+    settings = get_settings()
+    if not settings.HITL_ENABLED:
+        return {}
+    return {
+        name.strip(): {"allowed_decisions": ["approve", "edit", "reject"]}
+        for name in settings.APPROVAL_TOOLS.split(",")
+        if name.strip()
+    }
+
+
 def build_agent(registry: ToolRegistry, model=None):
     """构建 ReAct 图：LangChain 1.x 节点名为 model/tools。"""
+    settings = get_settings()
     if model is None:
-        settings = get_settings()
         model = ChatOpenAI(
             base_url=settings.LLM_BASE_URL,
             api_key=settings.LLM_API_KEY,
@@ -62,9 +77,21 @@ def build_agent(registry: ToolRegistry, model=None):
             timeout=settings.LLM_TIMEOUT,
             extra_body={"enable_thinking": False},
         )
+    interrupt_on = _approval_tools()
+    middleware = (
+        [
+            HumanInTheLoopMiddleware(
+                interrupt_on=interrupt_on,
+                description_prefix="该工具会产生真实网络请求，执行前需要人工审批",
+            )
+        ]
+        if interrupt_on
+        else []
+    )
     return create_agent(
         model=model,
         tools=registry.to_langchain_tools(),
         system_prompt=SYSTEM_PROMPT,
         checkpointer=_saver,
+        middleware=middleware,
     )

@@ -6,6 +6,7 @@ SqliteRepository（tmp_path），保证 SQL/JSON 序列化路径真实可信。
 """
 
 import json
+from types import SimpleNamespace
 
 import pytest
 from langchain_core.messages import AIMessage, ToolMessage
@@ -46,6 +47,10 @@ class FakeAgent:
                 raise self._exc
 
         return gen()
+
+    async def aget_state(self, config):
+        # run_agent 流结束后统一查一次检查点中断；假代理永远没有中断
+        return SimpleNamespace(tasks=[])
 
 
 @pytest.fixture

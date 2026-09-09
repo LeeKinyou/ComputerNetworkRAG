@@ -9,16 +9,40 @@ window.Components.timeline = {
     answer: { type: String, default: '' },
     streaming: { type: Boolean, default: false },
     truncated: { type: Boolean, default: false },
+    // 待审批 {step_no, tool, args, argsText}：行动卡片下插入审批条（06 §4.4.1）
+    pending: { type: Object, default: null },
+    disabled: { type: Boolean, default: false },
   },
-  setup: function () {
+  emits: ['decide'],
+  setup: function (props, ctx) {
+    var ref = Vue.ref;
     var TOOL_CN = {
       subnet_calculator: '子网计算器',
       lpm_lookup: '路由查表',
       dns_lookup: '域名解析',
       course_rag_query: '课程知识检索',
+      ping_host: '主机连通性探测',
+      http_probe: 'HTTP 探测',
     };
+    var editError = ref('');
 
     function toolCn(tool) { return TOOL_CN[tool] || tool; }
+
+    function decide(decision) {
+      editError.value = '';
+      if (decision === 'edit') {
+        var args;
+        try { args = JSON.parse(props.pending.argsText || '{}'); }
+        catch (e) { editError.value = '参数 JSON 解析失败，请检查格式'; return; }
+        if (!args || typeof args !== 'object' || Array.isArray(args)) {
+          editError.value = '参数必须是 JSON 对象，如 {"host": "www.example.com"}';
+          return;
+        }
+        ctx.emit('decide', { decision: 'edit', args: args });
+        return;
+      }
+      ctx.emit('decide', { decision: decision, args: null });
+    }
 
     // 思考文本为空时合成一行，不伪造模型没说过的推理（03 §3.2 / 06 §4.4.1）
     function synthThought(g) {
@@ -59,6 +83,8 @@ window.Components.timeline = {
       fmtArgs: fmtArgs,
       subnetRows: subnetRows,
       lpmRows: lpmRows,
+      editError: editError,
+      decide: decide,
     };
   },
   template: `
@@ -78,6 +104,27 @@ window.Components.timeline = {
                 <code class="tl-tool-name">{{ a.tool }}</code>
               </div>
               <pre class="tl-args">{{ fmtArgs(a.args) }}</pre>
+            </div>
+            <!-- 人工审批条（06 §4.4.1）：琥珀色、参数可编辑、三按钮 -->
+            <div v-if="pending && g.step_no === pending.step_no && !a.obs"
+                 class="tl-card approval">
+              <div class="tl-card-head">
+                <span class="tl-kind">等待人工</span>
+                <span class="tl-tool-cn">{{ toolCn(pending.tool) }}</span>
+                <code class="tl-tool-name">{{ pending.tool }}</code>
+              </div>
+              <div class="tl-card-text">该操作会产生真实网络请求，请审批后继续：</div>
+              <textarea class="tl-args-edit" v-model="pending.argsText"
+                        rows="4" spellcheck="false"></textarea>
+              <div v-if="editError" class="error-bar">{{ editError }}</div>
+              <div class="tl-approve-btns">
+                <button class="btn btn-sm primary" :disabled="disabled"
+                        @click="decide('approve')">批准执行</button>
+                <button class="btn btn-sm" :disabled="disabled"
+                        @click="decide('edit')">修改后执行</button>
+                <button class="btn btn-sm danger" :disabled="disabled"
+                        @click="decide('reject')">拒绝</button>
+              </div>
             </div>
             <div v-if="a.obs" class="tl-card observation" :class="{ failed: a.obs.status === 'failed' }">
               <div class="tl-card-head">
@@ -124,12 +171,15 @@ window.Components.timeline = {
         已达最大推理轮数上限，回答可能不完整
       </div>
 
-      <div v-if="answer || streaming" class="tl-answer" :class="{ streaming: streaming }">
+      <div v-if="answer || streaming || pending" class="tl-answer" :class="{ streaming: streaming }">
         <div class="tl-answer-head">最终回答</div>
         <div class="tl-answer-text">
           {{ answer }}<span v-if="streaming" class="caret"></span>
         </div>
         <div v-if="streaming && !answer" class="loading-hint">正在组织答案…</div>
+        <div v-if="pending && !streaming && !answer" class="loading-hint">
+          等待人工审批，批准后从断点继续
+        </div>
       </div>
     </div>
   `,
