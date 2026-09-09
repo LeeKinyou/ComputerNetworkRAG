@@ -18,6 +18,14 @@ def _dotted_mask_to_prefix(mask_text: str) -> int:
     return 32 - suffix.bit_length() + 1
 
 
+def _ipv4(text: str) -> ipaddress.IPv4Address:
+    try:
+        return ipaddress.IPv4Address(text)
+    except ValueError:
+        # 不透传 ipaddress 英文异常（如 "Octet 999 (> 255) not permitted"），界面要求中文提示
+        raise ValueError(f"IP 地址格式非法：{text}（每段应为 0-255 的整数，点分十进制）")
+
+
 class SubnetCalculatorTool(BaseTool):
     name = "subnet_calculator"
     description = (
@@ -42,7 +50,7 @@ class SubnetCalculatorTool(BaseTool):
         try:
             if " " in text:
                 ip_part, mask_part = text.split(None, 1)
-                ip = ipaddress.IPv4Address(ip_part.strip())
+                ip = _ipv4(ip_part.strip())
                 n = _dotted_mask_to_prefix(mask_part.strip())
             else:
                 ip_part, sep, tail = text.partition("/")
@@ -52,7 +60,7 @@ class SubnetCalculatorTool(BaseTool):
                         output="输入格式应为 IP/前缀长度（如 192.168.10.137/27），"
                         "或 'IP 掩码'（如 192.168.10.137 255.255.255.224）",
                     )
-                ip = ipaddress.IPv4Address(ip_part.strip())
+                ip = _ipv4(ip_part.strip())
                 n_text = tail.strip()
                 if "." in n_text:
                     n = _dotted_mask_to_prefix(n_text)

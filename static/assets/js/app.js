@@ -6,6 +6,7 @@
   window.Store = {
     currentView: ref('overview'),
     health: ref(null),
+    llmStatus: ref('unknown'),   // 仅由深探测更新，避免 15s 浅轮询冲掉降级态
     stats: ref({}),
   };
 
@@ -37,27 +38,47 @@
     });
   }
 
+  // 06 §4.2 / 07 Task4.2：check_llm=1 深探测接入状态点（挂载时 + 每 60s）
+  function refreshHealthDeep() {
+    API.getJSON('/api/health?check_llm=1').then(function (data) {
+      Store.health.value = data;
+      Store.llmStatus.value = data.llm || 'unknown';
+    }).catch(function () {
+      // 深探测失败时保留最近一次结果，不立刻翻红
+    });
+  }
+
   var app = Vue.createApp({
     setup: function () {
       onMounted(function () {
         syncFromHash();
         window.addEventListener('hashchange', syncFromHash);
         refreshHealth();
+        refreshHealthDeep();
         // 文档 06 §5：断网/API 异常时顶部状态点变红
         setInterval(refreshHealth, 15000);
+        setInterval(refreshHealthDeep, 60000);
       });
 
       var healthClass = computed(function () {
         if (!Store.health.value) return '';
-        return Store.health.value.status === 'ok' ? 'ok' : 'error';
+        if (Store.health.value.status === 'error') return 'error';
+        // 服务可达但 LLM 探测失败：琥珀色降级态（错 key / 断网 / 超时）
+        var llm = Store.llmStatus.value;
+        if (llm !== 'ok' && llm !== 'unknown') return 'warn';
+        return 'ok';
       });
       var healthText = computed(function () {
         if (!Store.health.value) return '检测中';
-        return Store.health.value.status === 'ok' ? '服务正常' : '服务异常';
+        if (Store.health.value.status === 'error') return '服务异常';
+        var llm = Store.llmStatus.value;
+        if (llm !== 'ok' && llm !== 'unknown') return 'LLM 异常';
+        return '服务正常';
       });
       var healthTitle = computed(function () {
         if (!Store.health.value) return '正在检测服务状态';
-        return 'status=' + Store.health.value.status + '  llm=' + (Store.health.value.llm || 'unknown');
+        var h = Store.health.value;
+        return 'status=' + h.status + '  llm=' + Store.llmStatus.value;
       });
 
       function go(key) { location.hash = '#/' + key; }

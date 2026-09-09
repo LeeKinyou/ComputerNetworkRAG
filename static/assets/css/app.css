@@ -52,6 +52,7 @@ body {
 .health { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-secondary); }
 .dot.ok { background: var(--success); }
+.dot.warn { background: var(--warning); }
 .dot.error { background: var(--error); }
 
 /* ===== 布局 ===== */

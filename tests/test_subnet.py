@@ -146,6 +146,14 @@ async def test_prefix_out_of_range_message(registry):
     assert "0-32" in result.output
 
 
+async def test_octet_overflow_message_is_chinese(registry):
+    # 07 Task4.2：非法 CIDR 演练要求界面明确提示，不能透传 ipaddress 英文异常
+    result = await run(registry, ip_cidr="999.999.1.1/99")
+    assert result.status == "failed"
+    assert "非法" in result.output
+    assert "Octet" not in result.output
+
+
 async def test_registry_envelope(registry):
     missing = await registry.run("subnet_calculator", {})
     assert missing.status == "failed"
