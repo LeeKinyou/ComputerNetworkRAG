@@ -14,9 +14,10 @@ window.Views.overview = {
       { key: 'sessions', label: '问答会话' },
     ];
 
-    // ----- 迷你知识图谱（06 §4.1：只读、limit=120、点击进入图谱页）-----
+    // ----- 迷你知识图谱 + 分布图表（06 §4.1：只读、纯前端聚合、点击进入图谱页）-----
     var TYPE_COLORS = (window.Components.graphView && window.Components.graphView.TYPE_COLORS) || {};
     function colorOf(t) { return TYPE_COLORS[t] || '#98A2AB'; }
+    var harvest = window.Components.graphView.harvest;
 
     var miniEl = ref(null);
     var miniNodes = ref([]);
@@ -26,7 +27,14 @@ window.Views.overview = {
     var chart = null;
     var miniRO = null;
     var miniFrozen = null;   // 力导收敛后冻结坐标，避免 resize/重渲染时反复洗牌
-    var harvest = window.Components.graphView.harvest;
+
+    var distEl = ref(null);
+    var relEl = ref(null);
+    var distData = ref([]);
+    var relData = ref([]);
+    var distChart = null;
+    var relChart = null;
+    var chartsRO = null;
 
     // echarts 在首帧布局完成前 init 会测到错误宽度（实测 100px），
     // 用 ResizeObserver 保证在真实布局后建图与重渲染
@@ -98,6 +106,105 @@ window.Views.overview = {
       });
     }
 
+    // ----- 实体类型分布环图 + 高频关系 Top8 条图（纯前端聚合，无新端点）-----
+    function ensureChart(elRef, built) {
+      if (built || !elRef.value || typeof echarts === 'undefined') return built;
+      if (!elRef.value.offsetWidth) return built;
+      return echarts.init(elRef.value);
+    }
+
+    function fitSize(elRef, inst) {
+      var w = elRef.value.offsetWidth;
+      var h = elRef.value.offsetHeight;
+      if (w && inst && (inst.getWidth() !== w || inst.getHeight() !== h)) inst.resize();
+    }
+
+    function renderDist() {
+      distChart = ensureChart(distEl, distChart);
+      if (!distChart || !distData.value.length) return;
+      fitSize(distEl, distChart);
+      distChart.setOption({
+        tooltip: {
+          trigger: 'item',
+          confine: true,
+          textStyle: { fontSize: 12 },
+          formatter: '{b}：{c} 个（{d}%）',
+        },
+        legend: {
+          bottom: 0, icon: 'circle', itemWidth: 10,
+          textStyle: { fontSize: 12, color: '#6B7280' },
+        },
+        series: [{
+          type: 'pie',
+          radius: ['44%', '70%'],
+          center: ['50%', '42%'],
+          itemStyle: { borderColor: '#fff', borderWidth: 2 },
+          label: { show: false },
+          emphasis: { label: { show: false } },
+          data: distData.value.map(function (d) {
+            return { name: d.name, value: d.value, itemStyle: { color: colorOf(d.name) } };
+          }),
+        }],
+      });
+    }
+
+    function renderRel() {
+      relChart = ensureChart(relEl, relChart);
+      if (!relChart || !relData.value.length) return;
+      fitSize(relEl, relChart);
+      var rows = relData.value.slice().reverse();  // 类目轴自下而上，反转后最大值在顶
+      relChart.setOption({
+        tooltip: {
+          trigger: 'item',
+          confine: true,
+          textStyle: { fontSize: 12 },
+          formatter: '{b}：{c} 条',
+        },
+        grid: { left: 10, right: 44, top: 6, bottom: 6, containLabel: true },
+        xAxis: { type: 'value', splitLine: { show: false }, axisLabel: { show: false }, axisLine: { show: false } },
+        yAxis: {
+          type: 'category',
+          data: rows.map(function (r) { return r.name; }),
+          axisLabel: { fontSize: 12, color: '#374151' },
+          axisTick: { show: false },
+          axisLine: { lineStyle: { color: '#E5E7EB' } },
+        },
+        series: [{
+          type: 'bar',
+          barWidth: 14,
+          data: rows.map(function (r) { return r.value; }),
+          itemStyle: { color: '#2B6E94', borderRadius: [0, 7, 7, 0] },
+          label: { show: true, position: 'right', fontSize: 12, color: '#6B7280' },
+        }],
+      });
+    }
+
+    function renderCharts() { renderDist(); renderRel(); }
+
+    function loadCharts() {
+      API.getJSON('/api/graph?limit=500').then(function (data) {
+        var nodes = data.nodes || [];
+        var edges = data.edges || [];
+        var tCount = {};
+        nodes.forEach(function (n) {
+          var t = n.type || '其他';
+          tCount[t] = (tCount[t] || 0) + 1;
+        });
+        distData.value = Object.keys(tCount).map(function (t) {
+          return { name: t, value: tCount[t] };
+        }).sort(function (a, b) { return b.value - a.value; });
+        var rCount = {};
+        edges.forEach(function (e) {
+          var l = e.label || '关联';
+          rCount[l] = (rCount[l] || 0) + 1;
+        });
+        relData.value = Object.keys(rCount).map(function (l) {
+          return { name: l, value: rCount[l] };
+        }).sort(function (a, b) { return b.value - a.value; }).slice(0, 8);
+        nextTick(renderCharts);
+      }).catch(function () { /* 图表区留空，迷你图错误条已提示 */ });
+    }
+
     function goGraph() { location.hash = '#/graph'; }
     function goLibrary() { location.hash = '#/library'; }
 
@@ -119,13 +226,22 @@ window.Views.overview = {
           });
           miniRO.observe(miniEl.value);
         }
+        if (!chartsRO && typeof ResizeObserver !== 'undefined') {
+          chartsRO = new ResizeObserver(function () { renderCharts(); });
+          if (distEl.value) chartsRO.observe(distEl.value);
+          if (relEl.value) chartsRO.observe(relEl.value);
+        }
         loadMini();
+        loadCharts();
       });
     });
 
     onBeforeUnmount(function () {
       if (miniRO) { miniRO.disconnect(); miniRO = null; }
+      if (chartsRO) { chartsRO.disconnect(); chartsRO = null; }
       if (chart) { chart.dispose(); chart = null; }
+      if (distChart) { distChart.dispose(); distChart = null; }
+      if (relChart) { relChart.dispose(); relChart = null; }
     });
 
     return {
@@ -135,6 +251,10 @@ window.Views.overview = {
       miniNodes: miniNodes,
       miniLoading: miniLoading,
       miniError: miniError,
+      distEl: distEl,
+      relEl: relEl,
+      distData: distData,
+      relData: relData,
       goGraph: goGraph,
       goLibrary: goLibrary,
       loadMini: loadMini,
@@ -149,35 +269,51 @@ window.Views.overview = {
           <div class="stat-label">{{ c.label }}</div>
         </div>
       </div>
-      <div class="card">
-        <div class="side-head">
-          <div class="side-title">知识图谱速览</div>
-          <button class="btn btn-sm" @click="goGraph">进入知识图谱</button>
-        </div>
-        <div v-if="miniError" class="error-bar">
-          {{ miniError }}
-          <button class="btn btn-sm" style="margin-left: 8px;" @click="loadMini">重试</button>
-        </div>
-        <div v-else-if="!miniNodes.length && !miniLoading" class="empty" style="padding: 32px 16px;">
-          <p>暂无图谱数据，请先上传课程材料建库</p>
-          <button class="btn btn-sm" @click="goLibrary">去知识库管理</button>
-        </div>
-        <div v-show="miniNodes.length" ref="miniEl" class="mini-graph"></div>
-      </div>
-      <div class="card">
-        <div class="side-title">快速开始</div>
-        <div class="steps-grid">
-          <div class="step-item">
-            <span class="step-no">1</span>
-            <div><h4>上传课程材料</h4><p>在"知识库管理"上传 md / txt / docx 讲义，系统自动解析建库</p></div>
+      <div class="ov-grid">
+        <div class="card">
+          <div class="side-head">
+            <div class="side-title">知识图谱速览</div>
+            <button class="btn btn-sm" @click="goGraph">进入知识图谱</button>
           </div>
-          <div class="step-item">
-            <span class="step-no">2</span>
-            <div><h4>浏览知识图谱</h4><p>查看从课件中自动抽取的实体关系网络，可搜索与筛选</p></div>
+          <div v-if="miniError" class="error-bar">
+            {{ miniError }}
+            <button class="btn btn-sm" style="margin-left: 8px;" @click="loadMini">重试</button>
           </div>
-          <div class="step-item">
-            <span class="step-no">3</span>
-            <div><h4>开始问答</h4><p>在"RAG 问答"提问课程概念，或在"ReAct 智能体"提出计算复合题</p></div>
+          <div v-else-if="!miniNodes.length && !miniLoading" class="empty" style="padding: 32px 16px;">
+            <p>暂无图谱数据，请先上传课程材料建库</p>
+            <button class="btn btn-sm" @click="goLibrary">去知识库管理</button>
+          </div>
+          <div v-show="miniNodes.length" ref="miniEl" class="mini-graph"></div>
+        </div>
+        <div class="card">
+          <div class="side-head"><div class="side-title">实体类型分布</div></div>
+          <div v-if="!distData.length" class="empty" style="padding: 32px 16px;">
+            <p>暂无统计数据，建库后自动生成</p>
+          </div>
+          <div v-show="distData.length" ref="distEl" class="mini-graph"></div>
+        </div>
+        <div class="card">
+          <div class="side-head"><div class="side-title">高频关系 Top 8</div></div>
+          <div v-if="!relData.length" class="empty" style="padding: 32px 16px;">
+            <p>暂无关系统计，建库后自动生成</p>
+          </div>
+          <div v-show="relData.length" ref="relEl" class="mini-graph"></div>
+        </div>
+        <div class="card">
+          <div class="side-title">快速开始</div>
+          <div class="steps-grid steps-vert">
+            <div class="step-item">
+              <span class="step-no">1</span>
+              <div><h4>上传课程材料</h4><p>在"知识库管理"上传 md / txt / docx 讲义，系统自动解析建库</p></div>
+            </div>
+            <div class="step-item">
+              <span class="step-no">2</span>
+              <div><h4>浏览知识图谱</h4><p>查看从课件中自动抽取的实体关系网络，可搜索与筛选</p></div>
+            </div>
+            <div class="step-item">
+              <span class="step-no">3</span>
+              <div><h4>开始问答</h4><p>在"RAG 问答"提问课程概念，或在"ReAct 智能体"提出计算复合题</p></div>
+            </div>
           </div>
         </div>
       </div>
