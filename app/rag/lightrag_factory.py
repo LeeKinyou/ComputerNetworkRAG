@@ -1,5 +1,6 @@
 import logging
 from pathlib import Path
+from typing import AsyncIterator
 
 import numpy as np
 import openai
@@ -41,13 +42,35 @@ def _client() -> openai.AsyncOpenAI:
 
 async def _llm_model_func(
     prompt: str, system_prompt: str | None = None, history_messages=None, **kwargs
-) -> str:
+) -> str | AsyncIterator[str]:
+    """LightRAG 的 LLM 入口。stream=True 时返回逐 token 的异步生成器（RAG 流式问答），
+    否则返回完整字符串（实体抽取等建库任务）。"""
     settings = get_settings()
     messages: list[dict] = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
     messages.extend(history_messages or [])
     messages.append({"role": "user", "content": prompt})
+
+    if kwargs.get("stream"):
+        stream = await _client().chat.completions.create(
+            model=settings.LLM_MODEL,
+            messages=messages,
+            timeout=settings.LLM_TIMEOUT,
+            extra_body={"enable_thinking": False},
+            stream=True,
+        )
+
+        async def _token_iter() -> AsyncIterator[str]:
+            async for chunk in stream:
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+                if delta and delta.content:
+                    yield delta.content
+
+        return _token_iter()
+
     resp = await _client().chat.completions.create(
         model=settings.LLM_MODEL,
         messages=messages,
@@ -162,6 +185,33 @@ async def aquery_context(question: str, mode: str) -> dict:
     if isinstance(data, dict) and "data" in data and isinstance(data["data"], dict):
         return data["data"]
     return data if isinstance(data, dict) else {}
+
+
+async def astream_query(
+    question: str, mode: str
+) -> tuple[list[dict], AsyncIterator[str]]:
+    """流式问答：单次检索+生成，返回（来源分块列表, token 迭代器）。
+
+    缓存命中或无上下文时 LightRAG 返回整段字符串，此处包装为单元素迭代器，
+    调用方无需区分。检索/调用失败抛 RuntimeError（aquery_llm 不抛异常而是返回
+    failure 字典，必须在这里转成异常，service 层才能发 error 事件）。
+    """
+    param = QueryParam(mode=mode, stream=True, enable_rerank=False)
+    result = await get_lightrag().aquery_llm(question, param)
+    if result.get("status") != "success":
+        raise RuntimeError(result.get("message") or "RAG 查询失败")
+
+    chunks = list((result.get("data") or {}).get("chunks") or [])
+    llm_resp = result.get("llm_response") or {}
+    iterator = llm_resp.get("response_iterator")
+
+    if iterator is not None:
+        return chunks, iterator
+
+    async def _single() -> AsyncIterator[str]:
+        yield llm_resp.get("content") or ""
+
+    return chunks, _single()
 
 
 async def get_graph_snapshot(max_nodes: int | None = None) -> tuple[list, list]:

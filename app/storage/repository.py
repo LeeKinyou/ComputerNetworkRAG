@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-from app.schemas import DocumentMeta, SessionMeta, StepRecord
+from app.schemas import DocumentMeta, MessageRecord, SessionMeta, StepRecord
 
 
 class Repository(ABC):
@@ -36,6 +36,9 @@ class Repository(ABC):
     async def add_message(
         self, session_id: str, role: str, content: str, run_id: str | None = None
     ) -> str: ...
+
+    @abstractmethod
+    async def list_messages(self, session_id: str) -> list[MessageRecord]: ...
 
     # ----- agent trace -----
 

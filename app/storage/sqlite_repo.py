@@ -5,7 +5,7 @@ from pathlib import Path
 
 import aiosqlite
 
-from app.schemas import DocumentMeta, SessionMeta, StepRecord
+from app.schemas import DocumentMeta, MessageRecord, SessionMeta, StepRecord
 from app.storage.repository import Repository
 
 DDL = """
@@ -190,6 +190,14 @@ class SqliteRepository(Repository):
         )
         await self._conn().commit()
         return msg_id
+
+    async def list_messages(self, session_id: str) -> list[MessageRecord]:
+        async with self._conn().execute(
+            "SELECT * FROM messages WHERE session_id = ? ORDER BY created_at, rowid",
+            (session_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [MessageRecord(**dict(row)) for row in rows]
 
     # ----- agent trace -----
 

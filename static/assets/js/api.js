@@ -34,7 +34,8 @@ window.API = (function () {
       for (;;) {
         const chunk = await reader.read();
         if (chunk.done) break;
-        buf += decoder.decode(chunk.value, { stream: true });
+        // sse-starlette 用 \r\n 行尾，统一归一成 \n 后按空行分帧
+        buf += decoder.decode(chunk.value, { stream: true }).replace(/\r/g, '');
         let idx;
         while ((idx = buf.indexOf('\n\n')) !== -1) {
           const frame = buf.slice(0, idx);

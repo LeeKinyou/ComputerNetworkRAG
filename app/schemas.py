@@ -14,6 +14,12 @@ class Event(BaseModel):
     data: dict[str, Any] = Field(default_factory=dict)
 
 
+class RAGChatRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=4000)
+    mode: str | None = None
+    session_id: str | None = None
+
+
 class DocumentMeta(BaseModel):
     doc_id: str
     filename: str
