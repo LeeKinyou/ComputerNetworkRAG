@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 VALID_MODES = {"naive", "local", "global", "hybrid"}
 
 _SNIPPET_LEN = 120
+_SNIPPET_FULL_LEN = 400
 _TITLE_LEN = 30
 
 
@@ -27,8 +28,22 @@ def _snippet(text: str) -> str:
     return flat[:_SNIPPET_LEN] + ("…" if len(flat) > _SNIPPET_LEN else "")
 
 
+def _snippet_full(text: str) -> str:
+    """检索工具用的长片段：压平空白并截到 400 字，避免单个分块吃满 1500 字上下文。"""
+    flat = " ".join(str(text or "").split())
+    return flat[:_SNIPPET_FULL_LEN] + ("…" if len(flat) > _SNIPPET_FULL_LEN else "")
+
+
 def _title(question: str) -> str:
     return question if len(question) <= _TITLE_LEN else question[:_TITLE_LEN] + "…"
+
+
+def resolve_mode(mode: str | None) -> str:
+    """非法/缺省模式回退全局配置默认；回退标注由调用方按需记录。"""
+    settings = get_settings()
+    default_mode = settings.RAG_QUERY_MODE if settings.RAG_QUERY_MODE in VALID_MODES else "hybrid"
+    requested = (mode or "").strip().lower()
+    return requested if requested in VALID_MODES else default_mode
 
 
 def _error_message(exc: Exception) -> str:
@@ -49,11 +64,9 @@ class RAGService:
     async def stream_answer(
         self, question: str, mode: str | None = None, session_id: str | None = None
     ) -> AsyncIterator[Event]:
-        settings = get_settings()
-        default_mode = settings.RAG_QUERY_MODE if settings.RAG_QUERY_MODE in VALID_MODES else "hybrid"
         requested = (mode or "").strip().lower()
         fallback = bool(requested) and requested not in VALID_MODES
-        mode = requested if requested in VALID_MODES else default_mode
+        mode = resolve_mode(mode)
 
         if not session_id:
             session_id = await self._repo.create_session("rag", _title(question))
@@ -85,6 +98,20 @@ class RAGService:
             await self._repo.add_message(session_id, "assistant", answer)
         except Exception as exc:  # noqa: BLE001 — 统一转 error 事件
             yield Event(name="error", data={"message": _error_message(exc)})
+
+    async def retrieve(self, query: str, mode: str | None = None) -> dict:
+        """课程检索（不生成答案），供 course_rag_query 工具使用（05 §2.4）。"""
+        resolved = resolve_mode(mode)
+        data = await lightrag_factory.aquery_context(query, resolved)
+        chunks = [
+            {
+                "doc_name": c.get("file_path") or "未知文档",
+                "chunk_id": c.get("chunk_id") or "",
+                "content": _snippet_full(c.get("content")),
+            }
+            for c in data.get("chunks") or []
+        ]
+        return {"mode": resolved, "chunks": chunks}
 
 
 def init_rag_service(repo: Repository) -> RAGService:
