@@ -112,7 +112,8 @@ window.Views.rag = {
       busy.value = true;
       followBottom.value = true;
       messages.value.push({ role: 'user', content: q, sources: [], error: '', streaming: false, question: '' });
-      var bot = { role: 'assistant', content: '', sources: [], error: '', streaming: true, question: q };
+      // reactive：SSE 闭包持原始引用，普通对象的属性变更不会触发重渲染
+      var bot = Vue.reactive({ role: 'assistant', content: '', sources: [], error: '', streaming: true, question: q });
       messages.value.push(bot);
       scrollBottom();
 

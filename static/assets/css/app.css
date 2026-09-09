@@ -283,3 +283,79 @@ table.doc-table th { font-size: 12px; color: var(--text-secondary); font-weight:
 .source-chunk { font-size: 11.5px; color: var(--text-secondary); }
 .source-snippet { font-size: 12.5px; line-height: 1.6; color: var(--text-color); }
 .source-snippet mark { background: #FCEBB6; color: inherit; padding: 0 1px; border-radius: 2px; }
+
+/* ===== ReAct 智能体：时间线（06 §4.4.1） ===== */
+.run-block { display: flex; flex-direction: column; gap: 10px; padding: 12px 4px; }
+.run-question {
+  font-size: 14px; font-weight: 600; color: var(--accent-deep);
+  background: rgba(139, 200, 234, 0.14); border-radius: 8px; padding: 8px 12px;
+}
+.collapse-toggle { text-align: center; }
+.run-timeline { display: block; }
+
+.timeline { display: flex; flex-direction: column; gap: 14px; padding: 4px 0 2px; }
+.tl-group { display: flex; gap: 12px; }
+.tl-badge {
+  flex-shrink: 0; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--accent-deep); color: #fff; font-size: 13px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center; margin-top: 2px;
+}
+.tl-body {
+  flex: 1; display: flex; flex-direction: column; gap: 8px;
+  border-left: 2px solid var(--border-color); padding-left: 14px; margin-left: -1px;
+  min-width: 0;
+}
+.tl-card {
+  border: 1px solid var(--border-color); border-left-width: 3px; border-radius: 8px;
+  background: var(--card-color); padding: 8px 12px;
+}
+.tl-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.tl-kind { font-size: 12px; font-weight: 600; color: var(--text-secondary); letter-spacing: 1px; }
+.tl-card.thought { border-left-color: var(--thought); }
+.tl-card.thought .tl-kind { color: var(--accent-deep); }
+.tl-card.action { border-left-color: var(--action); }
+.tl-card.action .tl-kind { color: var(--action-deep); }
+.tl-card.observation { border-left-color: var(--observe); }
+.tl-card.observation.failed { border-left-color: var(--error); }
+.tl-card.observation .tl-kind { color: var(--observe-deep); }
+.tl-card.observation.failed .tl-kind { color: var(--error); }
+.tl-tool-cn { font-size: 13px; font-weight: 600; }
+.tl-tool-name {
+  font-size: 11.5px; color: var(--text-secondary); background: var(--bg-color);
+  border-radius: 4px; padding: 1px 6px;
+}
+.tl-obs-status { font-size: 12px; font-weight: 600; color: var(--observe-deep); }
+.tl-obs-status.failed { color: var(--error); }
+.tl-elapsed { font-size: 11.5px; color: var(--text-secondary); }
+.tl-card-text { font-size: 14px; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
+.tl-args {
+  font-size: 12px; line-height: 1.55; font-family: Consolas, Menlo, monospace;
+  background: var(--bg-color); border-radius: 6px; padding: 7px 10px;
+  white-space: pre-wrap; word-break: break-all;
+}
+.tl-structured { margin-top: 6px; }
+.tl-structured summary {
+  cursor: pointer; font-size: 12.5px; color: var(--text-secondary); user-select: none;
+  width: fit-content;
+}
+.tl-structured summary:hover { color: var(--text-color); }
+.tl-table { border-collapse: collapse; margin-top: 6px; width: 100%; max-width: 560px; }
+.tl-table td, .tl-table th {
+  border: 1px solid var(--border-color); padding: 6px 12px; font-size: 13.5px; text-align: left;
+}
+.tl-table .tl-k { color: var(--text-secondary); white-space: nowrap; background: var(--bg-color); }
+.tl-table tr.hit .tl-k { color: var(--observe-deep); font-weight: 600; }
+.tl-table tr.miss { color: var(--text-secondary); }
+.tl-selected { margin-top: 8px; font-size: 14px; }
+.tl-selected b { color: var(--observe-deep); }
+
+.warn-bar {
+  background: #FCF3DC; color: #8C6A1D; border-radius: 8px;
+  padding: 8px 12px; font-size: 13px;
+}
+.tl-answer {
+  border: 1px solid var(--border-color); border-left: 3px solid var(--accent-deep);
+  border-radius: 8px; background: var(--card-color); padding: 10px 14px;
+}
+.tl-answer-head { font-size: 12px; font-weight: 600; color: var(--accent-deep); letter-spacing: 1px; margin-bottom: 4px; }
+.tl-answer-text { font-size: 14.5px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
