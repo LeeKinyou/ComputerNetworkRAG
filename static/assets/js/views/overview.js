@@ -3,7 +3,8 @@ window.Views = window.Views || {};
 window.Views.overview = {
   setup: function () {
     var ref = Vue.ref;
-    var watch = Vue.watch;
+    var nextTick = Vue.nextTick;
+    var onBeforeUnmount = Vue.onBeforeUnmount;
     var stats = Store.stats;
     var cards = [
       { key: 'documents', label: '课程文档' },
@@ -13,14 +14,111 @@ window.Views.overview = {
       { key: 'sessions', label: '问答会话' },
     ];
 
+    // ----- 迷你知识图谱（06 §4.1：只读、limit=120、点击进入图谱页）-----
+    var TYPE_COLORS = (window.Components.graphView && window.Components.graphView.TYPE_COLORS) || {};
+    function colorOf(t) { return TYPE_COLORS[t] || '#98A2AB'; }
+
+    var miniEl = ref(null);
+    var miniNodes = ref([]);
+    var miniEdges = ref([]);
+    var miniLoading = ref(false);
+    var miniError = ref('');
+    var chart = null;
+    var miniRO = null;
+
+    // echarts 在首帧布局完成前 init 会测到错误宽度（实测 100px），
+    // 用 ResizeObserver 保证在真实布局后建图与重渲染
+    function ensureMiniChart() {
+      if (chart || !miniEl.value || typeof echarts === 'undefined') return;
+      if (!miniEl.value.offsetWidth) return;
+      chart = echarts.init(miniEl.value);
+    }
+
+    function renderMini() {
+      ensureMiniChart();
+      if (!chart || !miniNodes.value.length) return;
+      var w = miniEl.value.offsetWidth;
+      var h = miniEl.value.offsetHeight;
+      if (w && (chart.getWidth() !== w || chart.getHeight() !== h)) chart.resize();
+      var nodes = miniNodes.value.map(function (n) {
+        return {
+          id: n.id,
+          name: n.name,
+          symbolSize: 8 + Math.min(16, (n.degree || 0) * 2),
+          itemStyle: { color: colorOf(n.type) },
+        };
+      });
+      var links = miniEdges.value.map(function (e) {
+        return { source: e.source, target: e.target };
+      });
+      chart.setOption({
+        series: [{
+          type: 'graph',
+          layout: 'force',
+          data: nodes,
+          links: links,
+          roam: false,
+          silent: true,   // 只读：不响应交互，点击入口交给"进入知识图谱"按钮
+          force: { repulsion: 110, edgeLength: [22, 64], gravity: 0.12, layoutAnimation: false },
+          label: { show: true, fontSize: 11, color: '#1A1B1C' },
+        }],
+      }, true);
+    }
+
+    function loadMini() {
+      miniLoading.value = true;
+      miniError.value = '';
+      API.getJSON('/api/graph?limit=120').then(function (data) {
+        miniNodes.value = data.nodes || [];
+        miniEdges.value = data.edges || [];
+        miniLoading.value = false;
+        nextTick(renderMini);
+      }).catch(function () {
+        miniLoading.value = false;
+        miniError.value = '图谱缩略图加载失败';
+      });
+    }
+
+    function goGraph() { location.hash = '#/graph'; }
+    function goLibrary() { location.hash = '#/library'; }
+
     function onActivate(fn) {
-      watch(Store.currentView, function (view) { if (view === 'overview') fn(); });
+      Vue.watch(Store.currentView, function (view) { if (view === 'overview') fn(); });
       if (Store.currentView.value === 'overview') fn();
     }
 
-    onActivate(function () { Store.refreshStats(); });
+    onActivate(function () {
+      Store.refreshStats();
+      // 视图常驻（v-show）：切进来时容器才有尺寸，nextTick 后再建图
+      nextTick(function () {
+        ensureMiniChart();
+        if (!miniRO && miniEl.value && typeof ResizeObserver !== 'undefined') {
+          miniRO = new ResizeObserver(function (entries) {
+            if (!entries[0].contentRect.width) return;
+            renderMini();
+          });
+          miniRO.observe(miniEl.value);
+        }
+        loadMini();
+      });
+    });
 
-    return { stats: stats, cards: cards };
+    onBeforeUnmount(function () {
+      if (miniRO) { miniRO.disconnect(); miniRO = null; }
+      if (chart) { chart.dispose(); chart = null; }
+    });
+
+    return {
+      stats: stats,
+      cards: cards,
+      miniEl: miniEl,
+      miniNodes: miniNodes,
+      miniLoading: miniLoading,
+      miniError: miniError,
+      goGraph: goGraph,
+      goLibrary: goLibrary,
+      loadMini: loadMini,
+    };
   },
   template: `
     <section>
@@ -30,6 +128,21 @@ window.Views.overview = {
           <div class="stat-value">{{ stats[c.key] ?? '—' }}</div>
           <div class="stat-label">{{ c.label }}</div>
         </div>
+      </div>
+      <div class="card">
+        <div class="side-head">
+          <div class="side-title">知识图谱速览</div>
+          <button class="btn btn-sm" @click="goGraph">进入知识图谱</button>
+        </div>
+        <div v-if="miniError" class="error-bar">
+          {{ miniError }}
+          <button class="btn btn-sm" style="margin-left: 8px;" @click="loadMini">重试</button>
+        </div>
+        <div v-else-if="!miniNodes.length && !miniLoading" class="empty" style="padding: 32px 16px;">
+          <p>暂无图谱数据，请先上传课程材料建库</p>
+          <button class="btn btn-sm" @click="goLibrary">去知识库管理</button>
+        </div>
+        <div v-show="miniNodes.length" ref="miniEl" class="mini-graph"></div>
       </div>
       <div class="card">
         <div class="side-title">快速开始</div>

@@ -1,7 +1,17 @@
 window.Components = window.Components || {};
 
-// ECharts 力导向图封装：类型配色、hover 提示、节点点击回调
+// 类型配色表：模块级导出，概览页迷你图复用同一套（06 §2：设计令牌全局唯一来源）
 window.Components.graphView = {
+  TYPE_COLORS: {
+    '协议': '#2B6E94',
+    '设备': '#9A6B2F',
+    '层次': '#3D7A33',
+    '地址': '#7A4A94',
+    '算法': '#B04A3A',
+    '性能指标': '#2F8A83',
+    '概念': '#5B7183',
+    'Other': '#98A2AB',
+  },
   props: {
     nodes: { type: Array, default: function () { return []; } },
     edges: { type: Array, default: function () { return []; } },
@@ -17,17 +27,9 @@ window.Components.graphView = {
 
     var el = ref(null);
     var chart = null;
+    var sizeObs = null;
 
-    var TYPE_COLORS = {
-      '协议': '#2B6E94',
-      '设备': '#9A6B2F',
-      '层次': '#3D7A33',
-      '地址': '#7A4A94',
-      '算法': '#B04A3A',
-      '性能指标': '#2F8A83',
-      '概念': '#5B7183',
-      'Other': '#98A2AB',
-    };
+    var TYPE_COLORS = window.Components.graphView.TYPE_COLORS;
     function colorOf(type) { return TYPE_COLORS[type] || '#98A2AB'; }
 
     function esc(s) {
@@ -119,9 +121,20 @@ window.Components.graphView = {
         }
       });
       render();
+      // 视图常驻 + v-show：从隐藏切到可见时容器尺寸从 0 变化，
+      // 需要 resize 后重跑力导布局（仅 resize 不会重新布局，节点会挤在左上角）
+      if (typeof ResizeObserver !== 'undefined') {
+        sizeObs = new ResizeObserver(function (entries) {
+          if (!entries[0].contentRect.width) return;
+          chart.resize();
+          render();
+        });
+        sizeObs.observe(el.value);
+      }
       window.addEventListener('resize', resize);
     });
     onBeforeUnmount(function () {
+      if (sizeObs) { sizeObs.disconnect(); sizeObs = null; }
       window.removeEventListener('resize', resize);
       if (chart) { chart.dispose(); chart = null; }
     });
