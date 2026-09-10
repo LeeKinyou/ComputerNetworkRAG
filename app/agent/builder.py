@@ -14,6 +14,7 @@ from langchain.agents.middleware import HumanInTheLoopMiddleware
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
+from app.agent.middleware import CompoundTaskMiddleware
 from app.agent.registry import ToolRegistry
 from app.config import get_settings
 
@@ -26,10 +27,13 @@ SYSTEM_PROMPT = """你是"计算机网络"课程的智能助教，运行在课�
 - lpm_lookup：路由表最长前缀匹配查表，可展示比对过程；
 - dns_lookup：域名 DNS 解析。
 行为准则：
-1. 回答前先判断问题类型并在思考中说明，需要数据时必须调用工具，不得心算编造子网结果；
-2. 复合问题分步骤调用，每次只调用一个工具，拿到观察结果后再决定下一步；
-3. 最终答案用中文，先给结论再给关键过程，引用检索结果时注明来自哪份课件；
-4. 与计算机网络无关的问题不调用工具，简要说明你的服务范围。"""
+1. 回答前先在思考中把问题拆成子问题清单，说明每个子问题需要哪个工具的数据；
+2. 需要数据的问题必须调用工具，不得心算编造子网结果；
+3. 每轮只调用一个工具，拿到观察结果后逐项核对子问题清单：只要有子问题还没有对应的工具观察结果，就必须继续调用下一个工具；
+4. 所有子问题都有工具观察结果支撑后才允许给最终答案；复合问题只调用一次工具通常不足以完整回答；
+5. 引用课件内容必须来自 course_rag_query 的检索结果并注明课件名，不得凭记忆虚构课件内容；
+6. 最终答案用中文，先给结论再给关键过程，引用检索结果时注明来自哪份课件；
+7. 与计算机网络无关的问题不调用工具，简要说明你的服务范围。"""
 
 _saver: AsyncSqliteSaver | None = None
 _conn: aiosqlite.Connection | None = None
@@ -78,16 +82,14 @@ def build_agent(registry: ToolRegistry, model=None):
             extra_body={"enable_thinking": False},
         )
     interrupt_on = _approval_tools()
-    middleware = (
-        [
+    middleware: list = [CompoundTaskMiddleware()]
+    if interrupt_on:
+        middleware.append(
             HumanInTheLoopMiddleware(
                 interrupt_on=interrupt_on,
                 description_prefix="该工具会产生真实网络请求，执行前需要人工审批",
             )
-        ]
-        if interrupt_on
-        else []
-    )
+        )
     return create_agent(
         model=model,
         tools=registry.to_langchain_tools(),

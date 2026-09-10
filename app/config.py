@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     LIGHTRAG_WORKING_DIR: str = "data/lightrag"
     RAG_QUERY_MODE: str = "hybrid"
 
-    AGENT_RECURSION_LIMIT: int = 12
+    AGENT_RECURSION_LIMIT: int = 24
     HITL_ENABLED: bool = False
     APPROVAL_TOOLS: str = "ping_host,http_probe"
 
