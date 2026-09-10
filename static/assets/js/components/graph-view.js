@@ -143,6 +143,10 @@ window.Components.graphView = {
     function render() {
       if (!chart) return;
       chart.setOption(buildOption(), true);
+      // 全量替换会清掉 dispatchAction 的 highlight 状态：
+      // 冻结/尺寸变化触发的重渲染必须把当前选中节点的邻接焦点补回来，
+      // 否则第一次点击（发生在力导收敛前）会被随后的冻结渲染冲掉
+      applyFocus(props.selectedName);
     }
 
     // 选中态等轻量更新走 merge：不整体替换 option，保留当前缩放/平移视口
