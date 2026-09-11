@@ -23,6 +23,7 @@
 [v-cloak] { display: none !important; }
 
 html, body { height: 100%; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body {
   font-family: var(--font);
   font-size: 14px;
@@ -31,7 +32,8 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-#app { display: flex; flex-direction: column; height: 100vh; }
+/* 手机浏览器 100vh 含动态地址栏，会把手势/输入区顶出可视区；dvh 跟随可视视口 */
+#app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
 
 /* ===== 顶部栏 ===== */
 .topbar {
@@ -43,11 +45,21 @@ body {
 .brand { font-size: 16px; font-weight: 600; white-space: nowrap; }
 .tabs { display: flex; gap: 4px; flex: 1; }
 .tab {
-  padding: 8px 14px; border: none; border-radius: 8px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 8px 14px; border: none; border-radius: 8px; white-space: nowrap;
   background: transparent; color: var(--text-secondary);
   font-size: 14px; font-family: inherit; cursor: pointer; user-select: none;
 }
-.tab:hover { background: var(--bg-color); color: var(--text-color); }
+/* 短标签只给手机端底部 tab 栏；图标在 <1024px 让位给长文字，避免顶栏撑出横向滚动 */
+.tab-short { display: none; }
+.tab-ic { display: none; }
+@media (min-width: 1024px) {
+  .tab-ic { display: inline-flex; }
+  .tab-ic svg { display: block; width: 16px; height: 16px; }
+}
+@media (hover: hover) {
+  .tab:hover { background: var(--bg-color); color: var(--text-color); }
+}
 .tab.active { background: var(--accent-deep); color: #fff; font-weight: 500; }
 .health { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-secondary); }
@@ -385,3 +397,132 @@ table.doc-table th { font-size: 12px; color: var(--text-secondary); font-weight:
 
 /* 概览页迷你图谱（06 §4.1） */
 .mini-graph { width: 100%; height: 360px; }
+
+/* 历史会话浮层的触发入口：桌面端侧栏常驻，无需该按钮 */
+.side-open-btn { display: none; }
+
+/* ============================================================
+   移动端（≤767px）
+   桌面端布局不受本块影响：这里只做重排与降密度，不引入新视觉语言
+   ============================================================ */
+@media (max-width: 767px) {
+  :root { --gap: 10px; }
+
+  /* 聊天类页面放弃「#app 锁高 + .main 内滚」：iOS 键盘只会顶起文档，
+     不会收缩固定高度的内层滚动容器，内滚布局下输入框会被键盘完全盖住 */
+  #app { height: auto; min-height: 100dvh; }
+  .main { overflow: visible; padding: 12px 12px calc(80px + env(safe-area-inset-bottom)); }
+
+  /* ---- 顶部栏只留品牌与状态，导航下沉为底部 tab 栏 ---- */
+  .topbar { height: 52px; padding: 0 14px; gap: 10px; }
+  .brand { font-size: 14.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .health { flex-shrink: 0; gap: 6px; }
+  .tabs {
+    position: fixed; left: 0; right: 0; bottom: 0; top: auto; z-index: 35;
+    display: flex; flex: none; gap: 2px;
+    padding: 5px 6px calc(5px + env(safe-area-inset-bottom));
+    background: var(--card-color);
+    border-top: 1px solid var(--border-color);
+  }
+  .tab {
+    flex: 1 1 0; min-width: 0; flex-direction: column; gap: 3px;
+    padding: 6px 2px 5px; border-radius: 10px; font-size: 11px; line-height: 1.25;
+  }
+  .tab-ic { display: block; }
+  .tab-ic svg { display: block; width: 20px; height: 20px; }
+  .tab-full { display: none; }
+  .tab-short { display: inline; }
+  /* 底部栏里 5 个实心色块过重，改用浅底 + 主色 */
+  .tab.active { background: #EAF4FA; color: var(--accent-deep); font-weight: 600; }
+
+  /* ---- 概览 ---- */
+  .view-title { font-size: 15px; }
+  .card { padding: 12px; }
+  .stat-grid { grid-template-columns: repeat(2, 1fr); }
+  .stat-grid .stat-card:last-child { grid-column: span 2; }
+  .stat-card { padding: 14px 8px; }
+  .stat-value { font-size: 22px; }
+  .ov-grid { grid-template-columns: minmax(0, 1fr); }
+  .mini-graph { height: 300px; }
+
+  /* ---- 知识图谱 ---- */
+  .graph-toolbar { gap: 8px; }
+  .search-input { width: 100%; }
+  .type-filter { flex: 1 1 100%; }
+  .toolbar-actions { flex: 1 1 100%; }
+  .toolbar-actions .btn { flex: 1; justify-content: center; }
+  .graph-card { padding: 4px; }
+  /* touch-action 让单指竖向滑动归浏览器（页面滚动），双指手势归 echarts 缩放 */
+  .graph-canvas { height: 54dvh; min-height: 320px; touch-action: pan-y; }
+  .truncated-bar { font-size: 12.5px; }
+
+  /* 实体详情：右侧抽屉改底部面板，380px 定宽在手机上会顶出屏幕左缘 */
+  .drawer {
+    top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: 76dvh;
+    border-left: none; border-top: 1px solid var(--border-color);
+    border-radius: 16px 16px 0 0; padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+    box-shadow: 0 -6px 24px rgba(0, 0, 0, .14);
+  }
+  .neighbor-item { padding: 12px 10px; }
+
+  /* ---- 问答类：单列 + 历史会话浮层 ---- */
+  .split, .rag-split { grid-template-columns: minmax(0, 1fr); }
+  .side-panel {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 46;
+    width: min(84vw, 320px); max-height: none; overflow-y: auto;
+    border-radius: 0; padding: 16px 14px calc(16px + env(safe-area-inset-bottom));
+    transform: translateX(-100%); transition: transform .22s ease;
+  }
+  .side-panel.open { transform: translateX(0); }
+  .side-open-btn { display: flex; }
+  .session-item { padding: 12px 10px; }
+  .chat-panel { height: auto; min-height: 0; padding: 12px; }
+  .chat-toolbar { gap: 8px; padding-bottom: 10px; }
+  .mode-btn { padding: 7px 12px; }
+  .chat-scroll { flex: none; overflow: visible; padding: 12px 0 4px; }
+  .chat-empty { height: auto; padding: 24px 0; }
+  /* align-items:center 下子项按 max-content 撑破卡片且不再换行，需按卡片宽度收口 */
+  .chat-empty > *, .empty > * { max-width: 100%; }
+  .bubble { max-width: 88%; }
+  .bubble .error-bar { flex-wrap: wrap; }
+  .chip { max-width: 100%; white-space: normal; overflow: visible; text-overflow: clip; }
+  .run-block { padding: 10px 0; }
+  .tl-group { gap: 8px; }
+  .tl-body { padding-left: 10px; }
+  .tl-table { max-width: none; }
+  .tl-approve-btns { flex-wrap: wrap; }
+  .tl-approve-btns .btn { flex: 1 1 auto; }
+
+  /* ---- 知识库：表格行改卡片，6 列表格在手机上必然横向溢出 ---- */
+  table.doc-table thead { display: none; }
+  table.doc-table, table.doc-table tbody, table.doc-table tr, table.doc-table td { display: block; width: auto; }
+  table.doc-table tr {
+    border: 1px solid var(--border-color); border-radius: 10px; padding: 8px 10px;
+  }
+  table.doc-table tr + tr { margin-top: 10px; }
+  table.doc-table td {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    border: none; padding: 3px 0;
+  }
+  table.doc-table td[data-label]::before {
+    content: attr(data-label); flex-shrink: 0;
+    font-size: 12px; color: var(--text-secondary);
+  }
+  table.doc-table td.doc-name {
+    display: block; max-width: none; margin-bottom: 2px;
+    font-size: 13.5px; font-weight: 500; text-align: left;
+    white-space: normal; overflow: visible; text-overflow: clip; word-break: break-all;
+  }
+  table.doc-table .doc-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+  table.doc-table .doc-actions .btn { flex: 1; justify-content: center; }
+  table.doc-table .doc-actions .btn + .btn { margin-left: 0; }
+  table.doc-table .error-row td { display: block; }
+  .dropzone { padding: 20px 12px; }
+
+  /* ---- 点击目标与表单 ---- */
+  /* iOS 聚焦字号 <16px 的表单控件会放大整页且不再缩回 */
+  input, textarea, select { font-size: 16px; }
+  .btn { padding: 9px 14px; }
+  .btn.btn-sm { padding: 8px 12px; }
+  .type-chip { padding: 7px 12px; }
+}

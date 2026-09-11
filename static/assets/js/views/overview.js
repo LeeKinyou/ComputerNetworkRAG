@@ -50,10 +50,13 @@ window.Views.overview = {
       var w = miniEl.value.offsetWidth;
       var h = miniEl.value.offsetHeight;
       if (w && (chart.getWidth() !== w || chart.getHeight() !== h)) chart.resize();
-      // 只给度数最高的前 10 个核心实体标名称，防止小卡内标签互相遮盖
+      // 只给度数最高的前 10 个核心实体标名称，防止小卡内标签互相遮盖；
+      // 手机上卡片只有 ~300px 高，10 个长中文名必然叠成一团，索性不标
       var labelSet = {};
-      miniNodes.value.slice().sort(function (a, b) { return (b.degree || 0) - (a.degree || 0); })
-        .slice(0, 10).forEach(function (n) { labelSet[n.id] = true; });
+      if (!UI.isPhone()) {
+        miniNodes.value.slice().sort(function (a, b) { return (b.degree || 0) - (a.degree || 0); })
+          .slice(0, 10).forEach(function (n) { labelSet[n.id] = true; });
+      }
       var nodes = miniNodes.value.map(function (n) {
         var item = {
           id: n.id,

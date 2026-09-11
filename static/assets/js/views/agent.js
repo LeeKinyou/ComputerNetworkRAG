@@ -18,6 +18,8 @@ window.Views.agent = {
     var ref = Vue.ref;
     var watch = Vue.watch;
     var nextTick = Vue.nextTick;
+    var onMounted = Vue.onMounted;
+    var onBeforeUnmount = Vue.onBeforeUnmount;
 
     // 演示用样例问题库（05 §6），点击即发送
     var CHIPS = [
@@ -38,6 +40,7 @@ window.Views.agent = {
     var busy = ref(false);
     var scroller = ref(null);
     var followBottom = ref(true);
+    var sideOpen = ref(false);      // 手机端历史会话浮层；桌面端侧栏常驻不受影响
 
     function onActivate(fn) {
       watch(Store.currentView, function (view) { if (view === 'agent') fn(); });
@@ -62,18 +65,15 @@ window.Views.agent = {
     }
 
     function scrollBottom(force) {
-      if (!scroller.value) return;
-      if (!force && !followBottom.value) return;
-      nextTick(function () {
-        var el = scroller.value;
-        if (el) el.scrollTop = el.scrollHeight;
-      });
+      var el = scroller.value;
+      if (!el) return;
+      if (!force && !UI.atBottom(el)) return;
+      nextTick(function () { UI.scrollToEnd(el); });
     }
 
     function onScroll() {
-      var el = scroller.value;
-      if (!el) return;
-      followBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+      if (!scroller.value) return;
+      followBottom.value = UI.atBottom(scroller.value);
     }
 
     function lastGroup(run) {
@@ -255,6 +255,7 @@ window.Views.agent = {
       if (busy.value) return;
       API.getJSON('/api/sessions/' + s.session_id).then(function (data) {
         currentSessionId.value = s.session_id;
+        sideOpen.value = false;
         // messages 按时间序携带 run_id：去重即该会话的运行列表
         var runIds = [];
         (data.messages || []).forEach(function (m) {
@@ -302,12 +303,21 @@ window.Views.agent = {
     function newSession() {
       if (busy.value) return;
       currentSessionId.value = '';
+      sideOpen.value = false;
       runs.value = [];
       question.value = '';
       followBottom.value = true;
     }
 
     onActivate(loadSessions);
+
+    // 手机端由文档滚动，@scroll 挂在 .chat-scroll 上收不到事件，需补整页监听
+    onMounted(function () {
+      window.addEventListener('scroll', onScroll, { passive: true });
+    });
+    onBeforeUnmount(function () {
+      window.removeEventListener('scroll', onScroll);
+    });
 
     return {
       chips: CHIPS,
@@ -319,6 +329,7 @@ window.Views.agent = {
       question: question,
       busy: busy,
       scroller: scroller,
+      sideOpen: sideOpen,
       fmtTime: fmtTime,
       loadSessions: loadSessions,
       selectSession: selectSession,
@@ -333,7 +344,8 @@ window.Views.agent = {
     <section>
       <h2 class="view-title">ReAct 智能体</h2>
       <div class="split rag-split">
-        <div class="card side-panel">
+        <div class="drawer-mask" v-if="sideOpen" @click="sideOpen = false"></div>
+        <div class="card side-panel" :class="{ open: sideOpen }">
           <div class="side-head">
             <div class="side-title">历史会话</div>
             <button class="btn btn-sm" :disabled="busy" @click="newSession">新会话</button>
@@ -351,6 +363,9 @@ window.Views.agent = {
         </div>
 
         <div class="card chat-panel">
+          <div class="side-head side-open-btn">
+            <button class="btn btn-sm" :disabled="busy" @click="sideOpen = true">历史会话</button>
+          </div>
           <div class="chat-scroll" ref="scroller" @scroll="onScroll">
             <div v-if="!runs.length" class="chat-empty">
               <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2">

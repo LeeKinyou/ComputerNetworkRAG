@@ -2,9 +2,9 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>计算机网络课程智能问答系统</title>
-  <link rel="stylesheet" href="/assets/css/app.css?v=m44">
+  <link rel="stylesheet" href="/assets/css/app.css?v=m47">
   <script src="https://registry.npmmirror.com/vue/3.4.38/files/dist/vue.global.prod.js"></script>
   <script>window.Vue || document.write('<script src="/assets/lib/vue.global.prod.js"><\/script>');</script>
   <script src="https://registry.npmmirror.com/echarts/5.5.1/files/dist/echarts.min.js"></script>
@@ -16,7 +16,11 @@
       <div class="brand">计算机网络课程智能问答系统</div>
       <nav class="tabs">
         <button v-for="t in tabs" :key="t.key" class="tab"
-                :class="{ active: currentView === t.key }" @click="go(t.key)">{{ t.label }}</button>
+                :class="{ active: currentView === t.key }" @click="go(t.key)">
+          <span class="tab-ic" v-html="t.icon"></span>
+          <span class="tab-full">{{ t.label }}</span>
+          <span class="tab-short">{{ t.short }}</span>
+        </button>
       </nav>
       <div class="health" :title="healthTitle">
         <span class="dot" :class="healthClass"></span>{{ healthText }}
@@ -33,15 +37,16 @@
     </main>
   </div>
 
-  <script src="/assets/js/api.js?v=m44"></script>
-  <script src="/assets/js/components/graph-view.js?v=m44"></script>
-  <script src="/assets/js/components/source-card.js?v=m44"></script>
-  <script src="/assets/js/components/timeline.js?v=m44"></script>
-  <script src="/assets/js/views/overview.js?v=m44"></script>
-  <script src="/assets/js/views/graph.js?v=m44"></script>
-  <script src="/assets/js/views/rag.js?v=m44"></script>
-  <script src="/assets/js/views/agent.js?v=m44"></script>
-  <script src="/assets/js/views/library.js?v=m44"></script>
-  <script src="/assets/js/app.js?v=m44"></script>
+  <script src="/assets/js/api.js?v=m47"></script>
+  <script src="/assets/js/ui.js?v=m47"></script>
+  <script src="/assets/js/components/graph-view.js?v=m47"></script>
+  <script src="/assets/js/components/source-card.js?v=m47"></script>
+  <script src="/assets/js/components/timeline.js?v=m47"></script>
+  <script src="/assets/js/views/overview.js?v=m47"></script>
+  <script src="/assets/js/views/graph.js?v=m47"></script>
+  <script src="/assets/js/views/rag.js?v=m47"></script>
+  <script src="/assets/js/views/agent.js?v=m47"></script>
+  <script src="/assets/js/views/library.js?v=m47"></script>
+  <script src="/assets/js/app.js?v=m47"></script>
 </body>
 </html>

@@ -16,6 +16,8 @@ window.Views.graph = {
     var activeTypes = ref([]);       // 类型多选
     var selected = ref(null);        // 抽屉中的实体详情
     var loaded = ref(false);         // 视图常驻：已加载则切换 Tab 不重复请求
+    // 小屏按 500 节点会糊成一团且首屏很慢，手机端降密度（可搜索/筛选继续深入）
+    var limit = ref(UI.isPhone() ? 160 : 500);
 
     var searchTimer = null;
     var graphRef = ref(null);
@@ -24,7 +26,7 @@ window.Views.graph = {
       var params = new URLSearchParams();
       if (keyword.value.trim()) params.set('keyword', keyword.value.trim());
       if (activeTypes.value.length) params.set('entity_type', activeTypes.value.join(','));
-      params.set('limit', '500');
+      params.set('limit', String(limit.value));
       loading.value = true;
       loadError.value = '';
       API.getJSON('/api/graph?' + params.toString()).then(function (data) {
@@ -72,6 +74,7 @@ window.Views.graph = {
 
     return {
       nodes: nodes, edges: edges, types: types, truncated: truncated,
+      limit: limit,
       loading: loading, loadError: loadError, keyword: keyword,
       selected: selected, graphRef: graphRef,
       onKeywordInput: onKeywordInput, toggleType: toggleType, typeActive: typeActive,
@@ -98,7 +101,7 @@ window.Views.graph = {
         <button class="btn btn-sm" style="margin-left: 8px;" @click="refresh">重试</button>
       </div>
       <div class="truncated-bar" v-if="truncated">
-        节点较多，已按 500 上限截断，请搜索或筛选缩小范围
+        节点较多，已按 {{ limit }} 上限截断，请搜索或筛选缩小范围
       </div>
       <div class="card graph-card">
         <graph-view v-if="nodes.length" ref="graphRef"

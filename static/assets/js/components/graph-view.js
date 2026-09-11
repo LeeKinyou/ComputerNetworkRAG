@@ -65,6 +65,7 @@ window.Components.graphView = {
     }
 
     function buildOption() {
+      var phone = window.UI.isPhone();
       var presentTypes = props.types.filter(function (t) {
         return props.nodes.some(function (n) { return n.type === t; });
       });
@@ -72,8 +73,17 @@ window.Components.graphView = {
       var catIndex = {};
       presentTypes.forEach(function (t, i) { catIndex[t] = i; });
 
+      // 小屏放不下整圈标签：只标度数最高的核心实体与当前选中项，避免互相遮盖
+      var labelSet = {};
+      if (phone) {
+        props.nodes.slice().sort(function (a, b) { return (b.degree || 0) - (a.degree || 0); })
+          .slice(0, 14).forEach(function (n) { labelSet[n.id] = true; });
+        if (props.selectedName) labelSet[props.selectedName] = true;
+      }
+
       var graphNodes = props.nodes.map(function (n) {
-        var size = 16 + Math.min(30, (n.degree || 0) * 3);
+        var size = phone ? 9 + Math.min(20, (n.degree || 0) * 2.2)
+                         : 16 + Math.min(30, (n.degree || 0) * 3);
         var selected = n.id === props.selectedName;
         var item = {
           id: n.id,
@@ -86,6 +96,7 @@ window.Components.graphView = {
             borderWidth: selected ? 2 : 0,
           },
         };
+        if (phone) item.label = { show: !!labelSet[n.id] };
         if (frozenPos) {
           var fp = frozenPos[n.id] || frozenPos[n.name];
           if (fp) { item.x = fp.x; item.y = fp.y; }
@@ -98,6 +109,8 @@ window.Components.graphView = {
 
       return {
         tooltip: {
+          // 触屏点选即弹详情面板，tooltip 只会残留在遮罩下，手机端直接关掉
+          show: !phone,
           confine: true,
           textStyle: { fontSize: 12 },
           extraCssText: 'max-width: 380px; white-space: normal;',
@@ -115,9 +128,14 @@ window.Components.graphView = {
         legend: presentTypes.length ? {
           data: presentTypes,
           bottom: 6,
+          // 小屏一行排不下会被裁掉，改分页式图例并限定左右边界
+          type: phone ? 'scroll' : 'plain',
+          left: phone ? 4 : 'center',
+          right: phone ? 4 : undefined,
           icon: 'circle',
           itemWidth: 10,
-          textStyle: { fontSize: 12, color: '#6B7280' },
+          itemGap: phone ? 8 : undefined,
+          textStyle: { fontSize: phone ? 11 : 12, color: '#6B7280' },
         } : undefined,
         series: [{
           type: 'graph',
@@ -125,15 +143,18 @@ window.Components.graphView = {
           data: graphNodes,
           links: graphEdges,
           categories: categories,
-          roam: true,
+          // 触屏下 roam:true 会把单指拖拽吞成画布平移，页面就划不动了；
+          // 'scale' 只接双指捏合缩放，单指手势交还浏览器
+          roam: phone ? 'scale' : true,
           draggable: true,
+          // 手机端不能平移出界，力导必须把整张图收进画布内
           force: {
-            repulsion: 260,
-            edgeLength: [40, 110],
-            gravity: 0.08,
+            repulsion: phone ? 100 : 260,
+            edgeLength: phone ? [22, 56] : [40, 110],
+            gravity: phone ? 0.16 : 0.08,
             layoutAnimation: false,
           },
-          label: { show: true, fontSize: 11, color: '#1A1B1C' },
+          label: { show: true, fontSize: phone ? 10 : 11, color: '#1A1B1C' },
           emphasis: { focus: 'adjacency', label: { fontWeight: 600 } },
           scaleLimit: { min: 0.4, max: 4 },
         }],

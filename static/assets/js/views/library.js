@@ -128,7 +128,7 @@ window.Views.library = {
         <div class="dropzone" :class="{ dragging: dragging }"
              @click="pick" @dragover.prevent="dragging = true"
              @dragleave="dragging = false" @drop.prevent="onDrop">
-          <p>将课程材料拖拽到此处，或点击选择文件</p>
+          <p>点击选择文件，或将文件拖拽到此处</p>
           <p class="hint">支持 .md / .txt / .docx，单文件不超过 20MB；上传后自动解析并建立知识库</p>
           <input ref="fileInput" type="file" multiple :accept="accept"
                  style="display: none" @change="onInputChange">
@@ -149,10 +149,10 @@ window.Views.library = {
             <template v-for="d in docs" :key="d.doc_id">
               <tr>
                 <td class="doc-name" :title="d.filename">{{ d.filename }}</td>
-                <td>{{ fmtSize(d.size_bytes) }}</td>
-                <td>{{ d.parser }}</td>
-                <td><span class="status-badge" :class="statusMeta(d.status).cls">{{ statusMeta(d.status).label }}</span></td>
-                <td>{{ d.chunk_count || '—' }}</td>
+                <td data-label="大小">{{ fmtSize(d.size_bytes) }}</td>
+                <td data-label="解析器">{{ d.parser }}</td>
+                <td data-label="状态"><span class="status-badge" :class="statusMeta(d.status).cls">{{ statusMeta(d.status).label }}</span></td>
+                <td data-label="分块">{{ d.chunk_count || '—' }}</td>
                 <td class="doc-actions">
                   <button class="btn btn-sm" @click="reindex(d)"
                           :disabled="d.status === 'pending' || d.status === 'parsed'">重建</button>

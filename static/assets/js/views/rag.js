@@ -8,6 +8,8 @@ window.Views.rag = {
     var ref = Vue.ref;
     var watch = Vue.watch;
     var nextTick = Vue.nextTick;
+    var onMounted = Vue.onMounted;
+    var onBeforeUnmount = Vue.onBeforeUnmount;
 
     var MODES = [
       { value: 'naive', label: 'naive', desc: '纯向量检索：直接取语义最相近的原文分块' },
@@ -32,6 +34,7 @@ window.Views.rag = {
     var inputError = ref('');
     var scroller = ref(null);
     var followBottom = ref(true);
+    var sideOpen = ref(false);      // 手机端历史会话浮层；桌面端侧栏常驻不受影响
 
     function onActivate(fn) {
       watch(Store.currentView, function (view) { if (view === 'rag') fn(); });
@@ -56,24 +59,22 @@ window.Views.rag = {
     }
 
     function scrollBottom(force) {
-      if (!scroller.value) return;
-      if (!force && !followBottom.value) return;
-      nextTick(function () {
-        var el = scroller.value;
-        if (el) el.scrollTop = el.scrollHeight;
-      });
+      var el = scroller.value;
+      if (!el) return;
+      if (!force && !UI.atBottom(el)) return;
+      nextTick(function () { UI.scrollToEnd(el); });
     }
 
     function onScroll() {
-      var el = scroller.value;
-      if (!el) return;
-      followBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+      if (!scroller.value) return;
+      followBottom.value = UI.atBottom(scroller.value);
     }
 
     function selectSession(s) {
       if (busy.value) return;
       API.getJSON('/api/sessions/' + s.session_id).then(function (data) {
         currentSessionId.value = s.session_id;
+        sideOpen.value = false;
         messages.value = (data.messages || []).map(function (m) {
           return { role: m.role, content: m.content, sources: [], error: '', streaming: false, question: '' };
         });
@@ -87,6 +88,7 @@ window.Views.rag = {
     function newSession() {
       if (busy.value) return;
       currentSessionId.value = '';
+      sideOpen.value = false;
       messages.value = [];
       question.value = '';
       inputError.value = '';
@@ -158,6 +160,14 @@ window.Views.rag = {
 
     onActivate(loadSessions);
 
+    // 手机端由文档滚动，@scroll 挂在 .chat-scroll 上收不到事件，需补整页监听
+    onMounted(function () {
+      window.addEventListener('scroll', onScroll, { passive: true });
+    });
+    onBeforeUnmount(function () {
+      window.removeEventListener('scroll', onScroll);
+    });
+
     return {
       modes: MODES,
       chips: CHIPS,
@@ -171,6 +181,7 @@ window.Views.rag = {
       listError: listError,
       inputError: inputError,
       scroller: scroller,
+      sideOpen: sideOpen,
       fmtTime: fmtTime,
       modeDesc: function () {
         for (var i = 0; i < MODES.length; i++) if (MODES[i].value === mode.value) return MODES[i].desc;
@@ -188,7 +199,8 @@ window.Views.rag = {
     <section>
       <h2 class="view-title">RAG 问答</h2>
       <div class="split rag-split">
-        <div class="card side-panel">
+        <div class="drawer-mask" v-if="sideOpen" @click="sideOpen = false"></div>
+        <div class="card side-panel" :class="{ open: sideOpen }">
           <div class="side-head">
             <div class="side-title">历史会话</div>
             <button class="btn btn-sm" :disabled="busy" @click="newSession">新会话</button>
@@ -207,6 +219,7 @@ window.Views.rag = {
 
         <div class="card chat-panel">
           <div class="chat-toolbar">
+            <button class="btn btn-sm side-open-btn" :disabled="busy" @click="sideOpen = true">历史会话</button>
             <span class="side-title">检索模式</span>
             <div class="mode-seg">
               <button v-for="m in modes" :key="m.value" class="mode-btn"
