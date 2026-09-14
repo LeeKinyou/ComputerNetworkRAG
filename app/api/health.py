@@ -1,10 +1,11 @@
 from datetime import datetime
 
 import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 
 from app import __version__
 from app.config import get_settings
+from app.rag import lightrag_console
 
 router = APIRouter()
 
@@ -36,7 +37,7 @@ async def ping_llm() -> tuple[bool, str]:
 
 
 @router.get("/api/health")
-async def health(check_llm: bool = False):
+async def health(request: Request, check_llm: bool = False):
     llm = "unknown"
     if check_llm:
         ok, detail = await ping_llm()
@@ -45,5 +46,6 @@ async def health(check_llm: bool = False):
         "status": "ok" if llm in ("unknown", "ok") else "degraded",
         "version": __version__,
         "llm": llm,
+        "console": lightrag_console.public_info(request.app),
         "time": datetime.now().isoformat(timespec="seconds"),
     }

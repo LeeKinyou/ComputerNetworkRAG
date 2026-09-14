@@ -16,7 +16,7 @@ from app.api.sessions import router as sessions_router
 from app.agent.builder import build_agent, close_checkpointer, open_checkpointer
 from app.agent.tools import create_registry
 from app.config import get_settings
-from app.rag import lightrag_factory
+from app.rag import lightrag_console, lightrag_factory
 from app.services.agent_service import get_agent_service, init_agent_service
 from app.services.ingestion_service import get_ingestion_service, init_ingestion_service
 from app.services.rag_service import get_rag_service, init_rag_service
@@ -39,6 +39,7 @@ async def lifespan(app: FastAPI):
     init_rag_service(repo)
     try:
         await lightrag_factory.init_lightrag()
+        lightrag_console.wire_console(app, lightrag_factory.get_lightrag())
     except Exception as exc:
         logging.getLogger(__name__).warning(
             "LightRAG 初始化失败，知识库功能暂不可用：%s", exc
@@ -53,6 +54,7 @@ async def lifespan(app: FastAPI):
     yield
     await get_ingestion_service().close()
     await close_checkpointer()
+    await lightrag_console.shutdown_console(app)
     await lightrag_factory.close_lightrag()
     await repo.close()
 
@@ -65,9 +67,12 @@ app.include_router(rag_router)
 app.include_router(agent_router)
 app.include_router(approval_router)
 app.include_router(sessions_router)
+# 必须早于兜底的 StaticFiles("/")：Starlette 按注册顺序匹配，后注册的路由会被它全部遮蔽
+lightrag_console.mount_console(app)
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 
 
 if __name__ == "__main__":
     settings = get_settings()
-    uvicorn.run("main:app", host=settings.APP_HOST, port=settings.APP_PORT)
+    # 传对象而非 "main:app"：导入字符串会让 uvicorn 把本模块再加载一份，挂载与初始化全部翻倍
+    uvicorn.run(app, host=settings.APP_HOST, port=settings.APP_PORT)

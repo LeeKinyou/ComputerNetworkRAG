@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     LIGHTRAG_WORKING_DIR: str = "data/lightrag"
     RAG_QUERY_MODE: str = "hybrid"
 
+    # LightRAG 官方控制台（/webui + /lightrag-api）。带删文档/改图谱的写接口，
+    # 且未配 AUTH_ACCOUNTS、LIGHTRAG_API_KEY 时不鉴权，所以默认关闭。
+    LIGHTRAG_CONSOLE: bool = False
+
     AGENT_RECURSION_LIMIT: int = 24
     HITL_ENABLED: bool = False
     APPROVAL_TOOLS: str = "ping_host,http_probe"

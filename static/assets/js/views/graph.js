@@ -4,6 +4,7 @@ window.Views.graph = {
   components: { 'graph-view': window.Components.graphView },
   setup: function () {
     var ref = Vue.ref;
+    var computed = Vue.computed;
     var onMounted = Vue.onMounted;
 
     var nodes = ref([]);
@@ -57,6 +58,12 @@ window.Views.graph = {
     function refresh() { query(); }
     function relayout() { if (graphRef.value) graphRef.value.relayout(); }
 
+    // wired 才代表文档/图谱/查询路由已挂上，只判断 enabled 会给出打不开的空页面
+    var consoleUrl = computed(function () {
+      var c = Store.health.value && Store.health.value.console;
+      return (c && c.enabled && c.wired) ? c.url : '';
+    });
+
     function openEntity(name) {
       API.getJSON('/api/graph/entity/' + encodeURIComponent(name)).then(function (data) {
         selected.value = data;
@@ -78,7 +85,7 @@ window.Views.graph = {
       loading: loading, loadError: loadError, keyword: keyword,
       selected: selected, graphRef: graphRef,
       onKeywordInput: onKeywordInput, toggleType: toggleType, typeActive: typeActive,
-      refresh: refresh, relayout: relayout,
+      refresh: refresh, relayout: relayout, consoleUrl: consoleUrl,
       onNodeClick: onNodeClick, selectNeighbor: selectNeighbor, closeDrawer: closeDrawer,
     };
   },
@@ -95,6 +102,9 @@ window.Views.graph = {
         <div class="toolbar-actions">
           <button class="btn btn-sm" @click="relayout">重新布局</button>
           <button class="btn btn-sm" @click="refresh" :disabled="loading">{{ loading ? '加载中…' : '刷新' }}</button>
+          <a class="btn btn-sm console-link" v-if="consoleUrl" :href="consoleUrl"
+             target="_blank" rel="noopener"
+             title="新窗口打开 LightRAG 官方控制台：3D 图谱、文档流水线、实体与关系编辑">LightRAG 视图</a>
         </div>
       </div>
       <div class="error-bar" v-if="loadError" style="margin-bottom: 12px;">{{ loadError }}
