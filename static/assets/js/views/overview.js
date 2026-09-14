@@ -16,7 +16,7 @@ window.Views.overview = {
 
     // ----- 迷你知识图谱 + 分布图表（06 §4.1：只读、纯前端聚合、点击进入图谱页）-----
     var TYPE_COLORS = (window.Components.graphView && window.Components.graphView.TYPE_COLORS) || {};
-    function colorOf(t) { return TYPE_COLORS[t] || '#98A2AB'; }
+    function colorOf(t) { return TYPE_COLORS[t] || '#94A3B8'; }
     var harvest = window.Components.graphView.harvest;
 
     var miniEl = ref(null);
@@ -83,7 +83,7 @@ window.Views.overview = {
           roam: false,
           silent: true,   // 只读：不响应交互，点击入口交给"进入知识图谱"按钮
           force: { repulsion: 300, edgeLength: [40, 100], gravity: 0.06, layoutAnimation: false },
-          label: { show: true, fontSize: 11, color: '#1A1B1C' },
+          label: { show: true, fontSize: 11, color: '#09090B' },
         }],
       }, true);
       // 力导收敛（所有节点均有坐标）后冻结坐标，缩放/重渲染不再洗牌
@@ -135,12 +135,14 @@ window.Views.overview = {
         tooltip: {
           trigger: 'item',
           confine: true,
-          textStyle: { fontSize: 12 },
+          backgroundColor: '#fff',
+          borderColor: '#E4E4E7',
+          textStyle: { fontSize: 12, color: '#09090B' },
           formatter: '{b}：{c} 个（{d}%）',
         },
         legend: {
           bottom: 0, icon: 'circle', itemWidth: 10,
-          textStyle: { fontSize: 12, color: '#6B7280' },
+          textStyle: { fontSize: 12, color: '#71717A' },
         },
         series: [{
           type: 'pie',
@@ -165,7 +167,9 @@ window.Views.overview = {
         tooltip: {
           trigger: 'item',
           confine: true,
-          textStyle: { fontSize: 12 },
+          backgroundColor: '#fff',
+          borderColor: '#E4E4E7',
+          textStyle: { fontSize: 12, color: '#09090B' },
           formatter: '{b}：{c} 条',
         },
         grid: { left: 10, right: 44, top: 6, bottom: 6, containLabel: true },
@@ -173,16 +177,16 @@ window.Views.overview = {
         yAxis: {
           type: 'category',
           data: rows.map(function (r) { return r.name; }),
-          axisLabel: { fontSize: 12, color: '#374151' },
+          axisLabel: { fontSize: 12, color: '#3F3F46' },
           axisTick: { show: false },
-          axisLine: { lineStyle: { color: '#E5E7EB' } },
+          axisLine: { lineStyle: { color: '#E4E4E7' } },
         },
         series: [{
           type: 'bar',
           barWidth: 14,
           data: rows.map(function (r) { return r.value; }),
-          itemStyle: { color: '#2B6E94', borderRadius: [0, 7, 7, 0] },
-          label: { show: true, position: 'right', fontSize: 12, color: '#6B7280' },
+          itemStyle: { color: '#10B981', borderRadius: [0, 7, 7, 0] },
+          label: { show: true, position: 'right', fontSize: 12, color: '#71717A' },
         }],
       });
     }
