@@ -568,6 +568,11 @@ table.doc-table tbody tr:hover { background: var(--bg-subtle); }
   /* ---- 点击目标与表单 ---- */
   /* iOS 聚焦字号 <16px 的表单控件会放大整页且不再缩回 */
   input, textarea, select { font-size: 16px; }
+  /* 元素选择器打不过桌面区的类规则（.search-input / .chat-input-row textarea
+     都是 13.5px），这里按同等特异性点名收口；16px 下 placeholder 要两行才放得下，
+     44px 高度会把第二行拦腰截断 */
+  .search-input, .chat-input-row textarea { font-size: 16px; }
+  .chat-input-row textarea { height: 62px; }
   .btn { padding: 9px 14px; }
   .btn.btn-sm { padding: 8px 12px; }
   .type-chip { padding: 7px 12px; }
