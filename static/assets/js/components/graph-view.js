@@ -5,15 +5,16 @@ window.Components = window.Components || {};
 // 供"力导布局收敛后冻结坐标"使用——layout 切到 'none' 后 roam 缩放是纯视口变换，
 // 不会出现"缩放后节点聚拢、连线射向旧坐标空白区"的点线脱钩问题。
 window.Components.graphView = {
+  // 与 LightRAG 控制台的浅色图谱取色风格对齐：高饱和 600 阶、白底可辨
   TYPE_COLORS: {
-    '协议': '#2B6E94',
-    '设备': '#9A6B2F',
-    '层次': '#3D7A33',
-    '地址': '#7A4A94',
-    '算法': '#B04A3A',
-    '性能指标': '#2F8A83',
-    '概念': '#5B7183',
-    'Other': '#98A2AB',
+    '协议': '#2563EB',
+    '设备': '#EA580C',
+    '层次': '#0D9488',
+    '地址': '#7C3AED',
+    '算法': '#DC2626',
+    '性能指标': '#CA8A04',
+    '概念': '#475569',
+    'Other': '#94A3B8',
   },
   harvest: function (chart) {
     if (!chart) return null;
@@ -57,8 +58,48 @@ window.Components.graphView = {
     var frozenPos = null;
     var harvest = window.Components.graphView.harvest;
 
+    // 收敛后把整张图等比缩放平移进画布：力导的稳定尺度取决于节点数/斥力，
+    // 直接照搬原始坐标要么挤成中央一团、要么撑破边界（实测 1280px 下都出现过）。
+    // 统一按包围盒缩放到画布内边距，留出右侧标签带与底部图例带
+    function fitToCanvas(pos) {
+      if (!pos || !chart) return pos;
+      var w = chart.getWidth(), h = chart.getHeight();
+      // 视图常驻 v-show 挂载时容器可能是 0×0，此时不冻结，等 ResizeObserver 触发
+      if (!w || !h) return null;
+      var keys = Object.keys(pos);
+      if (!keys.length) return pos;
+      var maxR = 0;
+      props.nodes.forEach(function (n) {
+        var size = UI.isPhone() ? 8 + Math.min(16, (n.degree || 0) * 1.8)
+                                : 14 + Math.min(20, (n.degree || 0) * 2.2);
+        maxR = Math.max(maxR, size / 2);
+      });
+      var padX = maxR + 4, padTop = maxR + 4;
+      var padRight = maxR + 110;   // 标签在节点右侧
+      var padBottom = maxR + 52;   // 图例带
+      var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      keys.forEach(function (k) {
+        var p = pos[k];
+        if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+      });
+      var bw = Math.max(maxX - minX, 1), bh = Math.max(maxY - minY, 1);
+      var tw = Math.max(w - padX - padRight, 1);
+      var th = Math.max(h - padTop - padBottom, 1);
+      var k = Math.min(tw / bw, th / bh);
+      var fitted = {};
+      keys.forEach(function (key) {
+        var p = pos[key];
+        fitted[key] = {
+          x: padX + (p.x - minX) * k + (tw - bw * k) / 2,
+          y: padTop + (p.y - minY) * k + (th - bh * k) / 2,
+        };
+      });
+      return fitted;
+    }
+
     var TYPE_COLORS = window.Components.graphView.TYPE_COLORS;
-    function colorOf(type) { return TYPE_COLORS[type] || '#98A2AB'; }
+    function colorOf(type) { return TYPE_COLORS[type] || '#94A3B8'; }
 
     function esc(s) {
       return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -73,17 +114,41 @@ window.Components.graphView = {
       var catIndex = {};
       presentTypes.forEach(function (t, i) { catIndex[t] = i; });
 
-      // 小屏放不下整圈标签：只标度数最高的核心实体与当前选中项，避免互相遮盖
-      var labelSet = {};
-      if (phone) {
-        props.nodes.slice().sort(function (a, b) { return (b.degree || 0) - (a.degree || 0); })
-          .slice(0, 14).forEach(function (n) { labelSet[n.id] = true; });
-        if (props.selectedName) labelSet[props.selectedName] = true;
+      // 标签避碰：先取度数最高的候选，再按估算的标签矩形贪心装箱——
+      // 度数高者先占位，被压住的直接不显示（ECharts 的 hideOverlap 对 graph
+      // 系列不生效，实测照叠）。无文字测量 API：CJK 按字号、ASCII 按 0.62 估宽
+      function estTextWidth(text, fs) {
+        var w = 0;
+        for (var i = 0; i < text.length; i++) {
+          var code = text.charCodeAt(i);
+          w += ((code >= 0x2E80 && code <= 0x9FFF) || (code >= 0xFF00 && code <= 0xFFEF)) ? fs : fs * 0.62;
+        }
+        return w;
       }
+      var labelCap = phone ? 10 : 18;
+      var labelSet = {};
+      var placed = [];
+      props.nodes.slice().sort(function (a, b) { return (b.degree || 0) - (a.degree || 0); })
+        .forEach(function (n) {
+          if (placed.length >= labelCap && n.id !== props.selectedName) return;
+          var fs = phone ? 11 : 12;
+          var p = frozenPos ? (frozenPos[n.id] || frozenPos[n.name]) : null;
+          if (p) {
+            var halfW = estTextWidth(n.name, fs) / 2 + 10;
+            var cx = p.x + 4 + halfW, cy = p.y, halfH = fs * 0.72 + 5;
+            for (var i = 0; i < placed.length; i++) {
+              var q = placed[i];
+              if (Math.abs(cx - q.cx) < halfW + q.halfW && Math.abs(cy - q.cy) < halfH + q.halfH) return;
+            }
+            placed.push({ cx: cx, cy: cy, halfW: halfW, halfH: halfH });
+          }
+          labelSet[n.id] = true;
+        });
 
       var graphNodes = props.nodes.map(function (n) {
-        var size = phone ? 9 + Math.min(20, (n.degree || 0) * 2.2)
-                         : 16 + Math.min(30, (n.degree || 0) * 3);
+        // 节点不能太大：310 节点规模下最近中心距约 35px，直径超过它就会互相压叠
+        var size = phone ? 8 + Math.min(16, (n.degree || 0) * 1.8)
+                         : 14 + Math.min(20, (n.degree || 0) * 2.2);
         var selected = n.id === props.selectedName;
         var item = {
           id: n.id,
@@ -92,11 +157,17 @@ window.Components.graphView = {
           symbolSize: size,
           itemStyle: {
             color: colorOf(n.type),
-            borderColor: selected ? '#1A1B1C' : 'rgba(0,0,0,0)',
+            borderColor: selected ? '#09090B' : 'rgba(0,0,0,0)',
             borderWidth: selected ? 2 : 0,
           },
         };
-        if (phone) item.label = { show: !!labelSet[n.id] };
+        // 标签定位写在 item 级（labelLayout 函数会让标签丢回居中定位，勿用）
+        item.label = {
+          show: !!labelSet[n.id],
+          fontSize: phone ? 11 : 12, color: '#09090B',
+          position: 'right', distance: 4,
+          textBorderColor: '#fff', textBorderWidth: 2,
+        };
         if (frozenPos) {
           var fp = frozenPos[n.id] || frozenPos[n.name];
           if (fp) { item.x = fp.x; item.y = fp.y; }
@@ -112,7 +183,9 @@ window.Components.graphView = {
           // 触屏点选即弹详情面板，tooltip 只会残留在遮罩下，手机端直接关掉
           show: !phone,
           confine: true,
-          textStyle: { fontSize: 12 },
+          backgroundColor: '#fff',
+          borderColor: '#E4E4E7',
+          textStyle: { fontSize: 12, color: '#09090B' },
           extraCssText: 'max-width: 380px; white-space: normal;',
           formatter: function (params) {
             if (params.dataType === 'edge') {
@@ -135,7 +208,7 @@ window.Components.graphView = {
           icon: 'circle',
           itemWidth: 10,
           itemGap: phone ? 8 : undefined,
-          textStyle: { fontSize: phone ? 11 : 12, color: '#6B7280' },
+          textStyle: { fontSize: phone ? 11 : 12, color: '#71717A' },
         } : undefined,
         series: [{
           type: 'graph',
@@ -147,14 +220,24 @@ window.Components.graphView = {
           // 'scale' 只接双指捏合缩放，单指手势交还浏览器
           roam: phone ? 'scale' : true,
           draggable: true,
-          // 手机端不能平移出界，力导必须把整张图收进画布内
+          // 力导只负责局部排布：尺度由收敛后的 fitToCanvas 统一缩放进画布。
+          // 斥力过小会把 310 节点收成中央一团（符号压叠），过大又会被 fit 缩回，
+          // 这档是在 1500×900 下实测的平衡点
           force: {
-            repulsion: phone ? 100 : 260,
-            edgeLength: phone ? [22, 56] : [40, 110],
-            gravity: phone ? 0.16 : 0.08,
+            repulsion: phone ? 300 : 800,
+            edgeLength: phone ? [30, 80] : [60, 150],
+            gravity: phone ? 0.18 : 0.1,
             layoutAnimation: false,
           },
-          label: { show: true, fontSize: phone ? 10 : 11, color: '#1A1B1C' },
+          // 标签置于节点右侧并描白边：白底图上压着连线与相邻节点也能读清
+          label: {
+            show: true, fontSize: phone ? 11 : 12, color: '#09090B',
+            position: 'right', distance: 4,
+            textBorderColor: '#fff', textBorderWidth: 2,
+          },
+          // 不使用函数式 labelLayout：它会让标签丢回居中定位
+          // （实测 position:'right' 配 labelLayout 后标签压在节点上）。
+          // 标签数量已由 labelCap 控制，密度可控
           emphasis: { focus: 'adjacency', label: { fontWeight: 600 } },
           scaleLimit: { min: 0.4, max: 4 },
         }],
@@ -190,29 +273,30 @@ window.Components.graphView = {
       }
     }
 
+    // 收敛后立刻冻结：不依赖 'finished'（它在容器未布局时可能拿不到坐标），
+    // 力导在 layoutAnimation:false 下是同步算完的，render 后即可 harvest
+    function freezeIfReady() {
+      if (frozenPos || !chart || !props.nodes.length) return;
+      var pos = harvest(chart);
+      if (!pos || Object.keys(pos).length < props.nodes.length) return;
+      var fitted = fitToCanvas(pos);
+      if (!fitted) return;
+      frozenPos = fitted;
+      render();
+    }
+
     onMounted(function () {
-      chart = echarts.init(el.value);
+      // 关动画：力导→冻结坐标的重渲染过渡在 310 节点下既慢又会被 resize 打断，
+      // 中间帧正好是"节点标签全糊成一团"的样子；直接让布局一步落位
+      chart = echarts.init(el.value, null, { animation: false });
       chart.on('click', function (params) {
         if (params.dataType === 'node') {
           var n = props.nodes[params.dataIndex];
           if (n) ctx.emit('node-click', n);
         }
       });
-      // 力导布局收敛（finished 且所有节点均有坐标）后冻结坐标；
-      // 此后缩放/平移的 finished 不再处理。finished 会在布局早期触发，
-      // 此时多数节点还没有坐标，必须等覆盖完整再冻结
-      chart.on('finished', function () {
-        if (frozenPos || !props.nodes.length) return;
-        setTimeout(function () {
-          if (frozenPos || !chart || !props.nodes.length) return;
-          var pos = harvest(chart);
-          if (pos && Object.keys(pos).length >= props.nodes.length) {
-            frozenPos = pos;
-            render();
-          }
-        }, 0);
-      });
-      // 冻结后拖拽节点：静默更新坐标快照，后续渲染沿用拖后位置
+      // 冻结已改为 render 后同步 freezeIfReady()：'finished' 在容器未布局时
+      // 拿不到坐标会静默失效，不再依赖它
       if (chart.getZr()) {
         chart.getZr().on('dragend', function () {
           if (!frozenPos) return;
@@ -221,6 +305,7 @@ window.Components.graphView = {
         });
       }
       render();
+      freezeIfReady();
       // 视图常驻 + v-show：从隐藏切到可见时容器尺寸从 0 变化，需重新布局；
       // 冻结坐标是像素坐标，尺寸变化后必须重跑力导，否则整体偏在一侧
       if (typeof ResizeObserver !== 'undefined') {
@@ -229,6 +314,7 @@ window.Components.graphView = {
           chart.resize();
           frozenPos = null;
           render();
+          freezeIfReady();
         });
         sizeObs.observe(el.value);
       }
