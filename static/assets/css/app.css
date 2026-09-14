@@ -492,10 +492,11 @@ table.doc-table tbody tr:hover { background: var(--bg-subtle); }
   .graph-toolbar { gap: 8px; }
   .search-input { width: 100%; }
   .type-filter { flex: 1 1 100%; }
-  .toolbar-actions { flex: 1 1 100%; }
+  .toolbar-actions { flex: 1 1 100%; flex-wrap: wrap; }
   .toolbar-actions .btn { flex: 1; justify-content: center; }
-  /* 官方控制台是重型桌面 3D 应用，手机上不给出入口（.btn 的 flex:1 还会挤掉操作行） */
-  .console-link { display: none; }
+  /* 官方控制台是桌面布局（手机上偏挤但可用），保留入口并单独占一行，
+     否则三钮 flex:1 平分后「LightRAG 视图」文字要折行 */
+  .toolbar-actions .console-link { flex: 1 1 100%; }
   .graph-card { padding: 4px; }
   /* touch-action 让单指竖向滑动归浏览器（页面滚动），双指手势归 echarts 缩放 */
   .graph-canvas { height: 54dvh; min-height: 320px; touch-action: pan-y; }
