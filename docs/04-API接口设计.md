@@ -55,7 +55,7 @@
 ### 3.1 POST /api/documents/upload
 
 - 请求：`multipart/form-data`，字段 `file`（单文件）；
-- 校验：扩展名 ∈ `.md/.txt/.docx`（P1 后追加 `.pdf/.pptx`），大小 ≤ `UPLOAD_MAX_MB`；
+- 校验：扩展名 ∈ `.md/.txt/.docx/.pdf/.pptx`，大小 ≤ `UPLOAD_MAX_MB`；
 - 行为：落盘 `data/uploads/`，写 documents(pending)，**异步**启动 IngestionService 流水线，立即返回。
 
 响应 202：

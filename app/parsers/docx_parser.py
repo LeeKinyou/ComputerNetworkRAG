@@ -7,6 +7,7 @@ from docx.oxml.ns import qn
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 
+from app.parsers._markdown import table_to_markdown
 from app.parsers.base import BaseParser, ParsedDocument, register
 
 _HEADING = re.compile(r"^(?:Heading|标题)\s*(\d+)\s*$", re.IGNORECASE)
@@ -34,16 +35,7 @@ def _cell_text(cell) -> str:
 
 
 def _table_markdown(table: Table) -> str:
-    rows = [[_cell_text(c) for c in row.cells] for row in table.rows]
-    rows = [r for r in rows if any(cell for cell in r)]
-    if not rows:
-        return ""
-    width = max(len(r) for r in rows)
-    rows = [r + [""] * (width - len(r)) for r in rows]
-    lines = ["| " + " | ".join(rows[0]) + " |"]
-    lines.append("| " + " | ".join(["---"] * width) + " |")
-    lines += ["| " + " | ".join(r) + " |" for r in rows[1:]]
-    return "\n".join(lines)
+    return table_to_markdown([[_cell_text(c) for c in row.cells] for row in table.rows])
 
 
 @register

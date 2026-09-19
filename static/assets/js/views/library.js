@@ -5,7 +5,7 @@ window.Views.library = {
     var ref = Vue.ref;
     var onMounted = Vue.onMounted;
 
-    var ACCEPT = ['.md', '.txt', '.docx'];
+    var ACCEPT = ['.md', '.txt', '.docx', '.pdf', '.pptx'];
     var MAX_MB = 20;
     var STATUS_META = {
       pending: { label: '排队中', cls: 'st-pending' },
@@ -129,7 +129,7 @@ window.Views.library = {
              @click="pick" @dragover.prevent="dragging = true"
              @dragleave="dragging = false" @drop.prevent="onDrop">
           <p>点击选择文件，或将文件拖拽到此处</p>
-          <p class="hint">支持 .md / .txt / .docx，单文件不超过 20MB；上传后自动解析并建立知识库</p>
+          <p class="hint">支持 .md / .txt / .docx / .pdf / .pptx，单文件不超过 20MB；上传后自动解析并建立知识库（扫描版 PDF 无文字层，暂不支持）</p>
           <input ref="fileInput" type="file" multiple :accept="accept"
                  style="display: none" @change="onInputChange">
         </div>

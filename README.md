@@ -12,7 +12,7 @@
 | 知识图谱 | 力导向布局、缩放/拖拽、实体搜索与类型筛选、点击查看详情与来源文档、邻接高亮；可新窗口打开 LightRAG 官方控制台（3D 图谱、文档流水线、实体编辑，需 `LIGHTRAG_CONSOLE=true`） |
 | RAG 问答 | 基于课程课件的检索增强问答，流式输出、来源可溯源、多种检索模式 |
 | ReAct 智能体 | 工具调用全过程时间线（子网计算结构化结果、路由匹配 trace、检索分块），复合问题多轮工具推进，历史回放 |
-| 知识库管理 | md/txt/docx 上传、解析建库状态跟踪、增量重建索引 |
+| 知识库管理 | md/txt/docx/pdf/pptx 上传、解析建库状态跟踪、增量重建索引 |
 
 ## 技术栈
 
@@ -52,7 +52,7 @@ uv run python main.py
 ├─ app/
 │  ├─ agent/          # ReAct 智能体：builder / runner / 工具注册表 / 审批与多轮中间件
 │  ├─ api/            # REST 与 SSE 端点（documents / graph / rag / agent / approval / health）
-│  ├─ parsers/        # md / txt / docx 解析器
+│  ├─ parsers/        # md / txt / docx / pdf / pptx 解析器
 │  ├─ rag/            # LightRAG 工厂与查询封装
 │  ├─ services/       # 业务服务（建库流水线、RAG、Agent 会话）
 │  └─ storage/        # SQLite 仓储（会话 / 消息 / trace / 文档元数据）

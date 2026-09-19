@@ -22,6 +22,11 @@ _NOISE_LINE = re.compile(
     r"^[-—–_=·\s]*(第\s*\d+\s*页|\d{1,4}\s*/\s*\d{1,4}|[-—–_]*\s*\d{1,4}\s*[-—–_]*)$"
 )
 
+# Wingdings/Symbol 字形码落在私用区；run 上的字体名不可靠（课件里标成"微软雅黑"），无法还原语义，一律剔除
+_GLYPH_NOISE = re.compile(
+    r"[\ue000-\uf8ff\ufff9-\ufffb\u200b-\u200d\ufeff\x00-\x08\x0b\x0c\x0e-\x1f\x7f]"
+)
+
 
 class FileTooLargeError(Exception):
     def __init__(self, size_mb: float, max_mb: int):
@@ -31,6 +36,7 @@ class FileTooLargeError(Exception):
 
 
 def clean_text(text: str) -> str:
+    text = _GLYPH_NOISE.sub("", text)
     lines = []
     for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
         if _NOISE_LINE.match(line.strip()):

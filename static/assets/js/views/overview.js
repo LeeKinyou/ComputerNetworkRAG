@@ -316,7 +316,7 @@ window.Views.overview = {
           <div class="steps-grid steps-vert">
             <div class="step-item">
               <span class="step-no">1</span>
-              <div><h4>上传课程材料</h4><p>在"知识库管理"上传 md / txt / docx 讲义，系统自动解析建库</p></div>
+              <div><h4>上传课程材料</h4><p>在"知识库管理"上传 md / txt / docx / pdf / pptx 讲义，系统自动解析建库</p></div>
             </div>
             <div class="step-item">
               <span class="step-no">2</span>

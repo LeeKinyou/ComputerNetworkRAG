@@ -31,11 +31,28 @@ def test_clean_text_strips_noise_and_collapses_blank_lines():
     assert "\n\n\n" not in out
 
 
+def test_clean_text_strips_symbol_font_glyphs():
+    """PPT/PDF 的 Wingdings/Symbol 字形码（私用区）不入库。"""
+    text = "比特差错：1 \uf0e0 0， 0 \uf0e0 1。\n\uf052\n\t帧的定义 \uf0a3\u200b\n"
+    out = clean_text(text)
+    assert "\uf0e0" not in out and "\uf052" not in out and "\uf0a3" not in out and "\u200b" not in out
+    assert "比特差错：1  0， 0  1。" in out
+    assert "帧的定义" in out
+    assert "\n\n\n" not in out
+
+
 async def test_save_upload_rejects_unsupported_and_oversize(repo, service):
     with pytest.raises(Exception, match="不支持的文件格式"):
-        await service.save_upload("a.pdf", b"%PDF-1.4")
+        await service.save_upload("a.png", b"\x89PNG")
     with pytest.raises(Exception, match="超过限制"):
         await service.save_upload("big.md", b"x" * (21 * 1024 * 1024))
+
+
+async def test_save_upload_accepts_pdf_and_pptx(repo, service):
+    pdf = await service.save_upload("第4章.pdf", b"%PDF-1.4")
+    pptx = await service.save_upload("第4章.pptx", b"PK")
+    assert pdf.parser == "PdfParser"
+    assert pptx.parser == "PptxParser"
 
 
 async def test_single_failure_does_not_block_next_document(repo, service, tmp_path, monkeypatch):
