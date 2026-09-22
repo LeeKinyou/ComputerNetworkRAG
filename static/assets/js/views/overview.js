@@ -270,11 +270,16 @@ window.Views.overview = {
       goGraph: goGraph,
       goLibrary: goLibrary,
       loadMini: loadMini,
+      openScreen: function () { window.open('/screen', '_blank'); },
     };
   },
   template: `
     <section>
-      <h2 class="view-title">概览</h2>
+      <div class="view-head">
+        <h2 class="view-title">概览</h2>
+        <button class="btn btn-sm" title="在新标签页打开投屏大屏（独立页面，不影响本工作台）"
+                @click="openScreen">进入数据大屏 ↗</button>
+      </div>
       <div class="stat-grid">
         <div class="card stat-card" v-for="c in cards" :key="c.key">
           <div class="stat-value">{{ stats[c.key] ?? '—' }}</div>

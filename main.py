@@ -12,6 +12,7 @@ from app.api.documents import router as documents_router
 from app.api.graph import router as graph_router
 from app.api.health import router as health_router
 from app.api.rag import router as rag_router
+from app.api.screen import router as screen_router
 from app.api.sessions import router as sessions_router
 from app.agent.builder import build_agent, close_checkpointer, open_checkpointer
 from app.agent.tools import create_registry
@@ -67,6 +68,7 @@ app.include_router(rag_router)
 app.include_router(agent_router)
 app.include_router(approval_router)
 app.include_router(sessions_router)
+app.include_router(screen_router)
 # 必须早于兜底的 StaticFiles("/")：Starlette 按注册顺序匹配，后注册的路由会被它全部遮蔽
 lightrag_console.mount_console(app)
 app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")

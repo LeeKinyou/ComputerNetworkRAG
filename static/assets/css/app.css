@@ -97,6 +97,9 @@ body {
 .main { flex: 1; overflow: auto; padding: var(--gap) 28px; }
 .view-wrap { max-width: 1720px; margin: 0 auto; }
 .view-title { font-size: 16px; font-weight: 600; margin-bottom: var(--gap); }
+/* 标题行 + 右侧动作（如概览页"进入数据大屏"） */
+.view-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--gap); }
+.view-head .view-title { margin-bottom: 0; }
 
 /* ===== 通用组件 ===== */
 .card {
