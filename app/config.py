@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     GRAPH_STORAGE: str = "NetworkXStorage"
     VECTOR_STORAGE: str = "NanoVectorDBStorage"
 
+    # LightRAG 快照按度数截断到这个上限：统计卡片会封顶少报，关键词/类型筛选也只在截断后的子图里做。
+    # 前端渲染规模由 /api/graph 的 limit 单独控制，与此无关。
+    MAX_GRAPH_NODES: int = 5000
+
 
 @lru_cache
 def get_settings() -> Settings:

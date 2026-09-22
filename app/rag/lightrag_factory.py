@@ -112,6 +112,7 @@ async def init_lightrag() -> LightRAG:
         vector_storage=settings.VECTOR_STORAGE,
         graph_storage=settings.GRAPH_STORAGE,
         doc_status_storage="JsonDocStatusStorage",
+        max_graph_nodes=settings.MAX_GRAPH_NODES,
         llm_model_func=_llm_model_func,
         llm_model_name=settings.LLM_MODEL,
         embedding_func=EmbeddingFunc(
@@ -216,6 +217,11 @@ async def astream_query(
 
 async def get_graph_snapshot(max_nodes: int | None = None) -> tuple[list, list]:
     kg = await get_lightrag().get_knowledge_graph(node_label="*", max_nodes=max_nodes)
+    if kg.is_truncated:
+        logger.warning(
+            "图谱快照已截断到 %d 节点，统计与筛选不完整（可上调 MAX_GRAPH_NODES）",
+            get_settings().MAX_GRAPH_NODES,
+        )
     return kg.nodes, kg.edges
 
 
