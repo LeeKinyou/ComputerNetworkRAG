@@ -58,3 +58,20 @@ class Repository(ABC):
 
     @abstractmethod
     async def get_run_steps(self, run_id: str) -> list[StepRecord]: ...
+
+    # ----- 大屏聚合（只读） -----
+
+    @abstractmethod
+    async def screen_tool_stats(self) -> list[dict]: ...
+
+    @abstractmethod
+    async def screen_message_trend(self, since: str) -> dict[str, int]: ...
+
+    @abstractmethod
+    async def screen_run_stats(self) -> dict: ...
+
+    @abstractmethod
+    async def screen_feed(self, limit: int = 20) -> list[dict]: ...
+
+    @abstractmethod
+    async def screen_chapter_entities(self) -> dict[int, int]: ...

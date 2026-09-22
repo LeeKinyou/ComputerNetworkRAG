@@ -262,6 +262,73 @@ class SqliteRepository(Repository):
             steps.append(StepRecord(**data))
         return steps
 
+    # ----- 大屏聚合（只读） -----
+
+    async def screen_tool_stats(self) -> list[dict]:
+        """工具调用统计：tool_name 只在 action 行、status/耗时只在 observation 行，
+        按 (run_id, step_no) 自连接配对；unobserved 为没等到观察结果的调用数。"""
+        async with self._conn().execute(
+            """
+            SELECT a.tool_name AS name,
+                   COUNT(*) AS calls,
+                   AVG(o.elapsed_ms) AS avg_ms,
+                   SUM(CASE WHEN o.status = 'success' THEN 1 ELSE 0 END) AS ok_count,
+                   SUM(CASE WHEN o.status IS NULL THEN 1 ELSE 0 END) AS unobserved
+            FROM agent_steps a
+            LEFT JOIN agent_steps o
+              ON o.run_id = a.run_id AND o.step_no = a.step_no AND o.kind = 'observation'
+            WHERE a.kind = 'action' AND a.tool_name IS NOT NULL AND a.tool_name <> ''
+            GROUP BY a.tool_name
+            ORDER BY calls DESC, name
+            """
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    async def screen_message_trend(self, since: str) -> dict[str, int]:
+        """since（含）起每日提问条数，只统计 role='user'；无数据的日期由上层补零。"""
+        async with self._conn().execute(
+            "SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS n FROM messages "
+            "WHERE role = 'user' AND substr(created_at, 1, 10) >= ? GROUP BY day",
+            (since,),
+        ) as cur:
+            rows = await cur.fetchall()
+        return {r["day"]: r["n"] for r in rows}
+
+    async def screen_run_stats(self) -> dict:
+        async with self._conn().execute(
+            """
+            SELECT COUNT(*) AS total,
+                   (SELECT COUNT(*) FROM agent_steps) AS steps,
+                   COALESCE(SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END), 0) AS interrupted
+            FROM agent_runs
+            """
+        ) as cur:
+            row = await cur.fetchone()
+        return dict(row)
+
+    async def screen_feed(self, limit: int = 20) -> list[dict]:
+        """最近提问，最新在前；同秒插入用 rowid 兜底保证顺序稳定。"""
+        async with self._conn().execute(
+            "SELECT content, created_at FROM messages WHERE role = 'user' "
+            "ORDER BY created_at DESC, rowid DESC LIMIT ?",
+            (limit,),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]
+
+    async def screen_chapter_entities(self) -> dict[int, int]:
+        """按章统计物化知识点数；knowledge_node 由 Task 5.5 建表，未建表时返回空。"""
+        try:
+            async with self._conn().execute(
+                "SELECT chapter, COUNT(*) AS n FROM knowledge_node "
+                "WHERE chapter IS NOT NULL GROUP BY chapter"
+            ) as cur:
+                rows = await cur.fetchall()
+        except aiosqlite.OperationalError:
+            return {}
+        return {int(r["chapter"]): r["n"] for r in rows}
+
 
 _repo: SqliteRepository | None = None
 

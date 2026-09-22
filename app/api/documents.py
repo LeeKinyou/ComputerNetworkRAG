@@ -4,8 +4,8 @@ from fastapi import APIRouter, File, UploadFile
 
 from app.api.common import error_response as _error
 from app.parsers import UnsupportedFormatError
-from app.rag import lightrag_factory
 from app.services.ingestion_service import FileTooLargeError, get_ingestion_service
+from app.services.stats_service import core_stats
 from app.storage.sqlite_repo import get_repo
 
 logger = logging.getLogger(__name__)
@@ -57,20 +57,4 @@ async def reindex_document(doc_id: str):
 
 @router.get("/stats")
 async def stats():
-    repo = get_repo()
-    docs = await repo.list_documents()
-    sessions = await repo.list_sessions()
-    entities = relations = 0
-    try:
-        nodes, edges = await lightrag_factory.get_graph_snapshot()
-        entities, relations = len(nodes), len(edges)
-    except Exception:
-        logger.warning("统计图谱数据失败（知识库可能未初始化）", exc_info=True)
-    return {
-        "documents": len(docs),
-        "documents_indexed": sum(1 for d in docs if d.status == "indexed"),
-        "chunks": sum(d.chunk_count for d in docs),
-        "entities": entities,
-        "relations": relations,
-        "sessions": len(sessions),
-    }
+    return await core_stats(get_repo())

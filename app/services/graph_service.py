@@ -52,6 +52,14 @@ def _type_of_edge(edge) -> tuple[str, str]:
     return props.get("keywords") or "关联", props.get("description") or ""
 
 
+def _degrees(edges) -> dict[str, int]:
+    degree: dict[str, int] = {}
+    for e in edges:
+        degree[e.source] = degree.get(e.source, 0) + 1
+        degree[e.target] = degree.get(e.target, 0) + 1
+    return degree
+
+
 async def get_graph(keyword: str = "", entity_type: str = "", limit: int = 500) -> dict:
     limit = max(1, min(limit, _NODE_LIMIT_CAP))
     nodes_raw, edges_raw = await lightrag_factory.get_graph_snapshot()
@@ -75,10 +83,7 @@ async def get_graph(keyword: str = "", entity_type: str = "", limit: int = 500) 
     truncated = len(selected) > limit
     selected = selected[:limit]
 
-    degree: dict[str, int] = {}
-    for e in edges_raw:
-        degree[e.source] = degree.get(e.source, 0) + 1
-        degree[e.target] = degree.get(e.target, 0) + 1
+    degree = _degrees(edges_raw)
 
     nodes = []
     ids: set[str] = set()
@@ -107,6 +112,45 @@ async def get_graph(keyword: str = "", entity_type: str = "", limit: int = 500) 
             })
 
     return {"nodes": nodes, "edges": edges, "types": types, "truncated": truncated}
+
+
+async def get_screen_aggregates() -> dict:
+    """大屏图域聚合（类型分布 / 度数 Top10 / 关系词 Top10）。
+
+    与 /api/stats 同源同一次全量快照，**不受 get_graph 的 limit 截断**——
+    前端基于 limit=500 的聚合会让大屏数字小于真实值，两边对不上。
+    """
+    nodes_raw, edges_raw = await lightrag_factory.get_graph_snapshot()
+    degree = _degrees(edges_raw)
+
+    type_count: dict[str, int] = {}
+    for n in nodes_raw:
+        t = _node_type(n.properties or {})
+        type_count[t] = type_count.get(t, 0) + 1
+
+    label_count: dict[str, int] = {}
+    for e in edges_raw:
+        label, _ = _type_of_edge(e)
+        label_count[label] = label_count.get(label, 0) + 1
+
+    top_entities = [
+        {"name": _node_name(n), "type": _node_type(n.properties or {}),
+         "degree": degree.get(_node_name(n), 0)}
+        for n in nodes_raw
+    ]
+    top_entities.sort(key=lambda x: x["degree"], reverse=True)
+
+    return {
+        "entity_types": sorted(
+            ({"type": t, "count": c} for t, c in type_count.items()),
+            key=lambda x: x["count"], reverse=True,
+        ),
+        "top_entities": top_entities[:10],
+        "top_relations": sorted(
+            ({"label": lbl, "count": c} for lbl, c in label_count.items()),
+            key=lambda x: x["count"], reverse=True,
+        )[:10],
+    }
 
 
 async def get_entity_detail(name: str) -> dict:
