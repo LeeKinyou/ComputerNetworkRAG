@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>数据大屏 · 计算机网络课程智能问答系统</title>
-  <link rel="stylesheet" href="/assets/css/screen.css?v=m69">
+  <link rel="stylesheet" href="/assets/css/screen.css?v=m70">
   <script src="https://registry.npmmirror.com/echarts/5.5.1/files/dist/echarts.min.js"></script>
   <script>window.echarts || document.write('<script src="/assets/lib/echarts.min.js"><\/script>');</script>
 </head>
@@ -12,6 +12,7 @@
   <div class="screen-root" id="screenRoot">
     <header class="sc-head">
       <h1>计算机网络课程知识图谱与智能问答系统 · 数据大屏</h1>
+      <div class="sc-status" id="scStatus">数据加载中…</div>
       <div class="sc-clock" id="scClock">--:--:--</div>
     </header>
 
@@ -29,29 +30,29 @@
           </div>
         </div>
         <div class="sc-panel sc-grow">
-          <div class="sc-panel-title">实体类型分布</div>
+          <div class="sc-panel-title">实体类型分布<span class="sc-panel-sub" id="typesSub"></span></div>
           <div class="sc-chart" id="chart-entity-types"><div class="sc-ph">数据接入中</div></div>
         </div>
       </section>
 
       <section class="sc-col">
         <div class="sc-panel sc-grow">
-          <div class="sc-panel-title">知识图谱</div>
+          <div class="sc-panel-title">知识图谱<span class="sc-panel-sub" id="graphFocus"></span></div>
           <div class="sc-chart" id="chart-graph"><div class="sc-ph">数据接入中</div></div>
         </div>
         <div class="sc-panel sc-h200">
-          <div class="sc-panel-title">近 14 日问答趋势</div>
+          <div class="sc-panel-title">近 14 日问答趋势<span class="sc-panel-sub" id="trendSub"></span></div>
           <div class="sc-chart" id="chart-trend"><div class="sc-ph">数据接入中</div></div>
         </div>
       </section>
 
       <section class="sc-col">
         <div class="sc-panel sc-h220">
-          <div class="sc-panel-title">工具调用统计</div>
+          <div class="sc-panel-title">工具调用统计<span class="sc-panel-sub" id="toolsSub"></span></div>
           <div class="sc-chart" id="chart-tools"><div class="sc-ph">数据接入中</div></div>
         </div>
         <div class="sc-panel sc-h260">
-          <div class="sc-panel-title">章节覆盖度</div>
+          <div class="sc-panel-title">章节覆盖度<span class="sc-panel-sub" id="chaptersSub"></span></div>
           <div class="sc-chart" id="chart-chapters"><div class="sc-ph">数据接入中</div></div>
         </div>
         <div class="sc-panel sc-grow">
@@ -64,14 +65,12 @@
     <footer class="sc-marquee">
       <span class="sc-marquee-label">实时问答</span>
       <div class="sc-marquee-track">
-        <div class="sc-marquee-content">
-          <span>大屏骨架已就绪，问答与统计数据将在后续任务接入 …</span>
-          <span>大屏骨架已就绪，问答与统计数据将在后续任务接入 …</span>
-        </div>
+        <div class="sc-marquee-content" id="scFeed"></div>
       </div>
     </footer>
   </div>
 
-  <script src="/assets/js/screen/screen.js?v=m69"></script>
+  <script src="/assets/js/components/graph-layout.js?v=m70"></script>
+  <script src="/assets/js/screen/screen.js?v=m70"></script>
 </body>
 </html>

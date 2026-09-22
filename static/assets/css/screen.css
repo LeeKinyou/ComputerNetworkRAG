@@ -88,6 +88,15 @@ body::before {                            /* 全屏冷色辉光，压低纯色�
   opacity: .9;
   font-variant-numeric: tabular-nums;
 }
+.sc-status {                              /* 数据新鲜度 / 失败提示，演示时一眼可见 */
+  position: absolute;
+  left: 222px;                            /* 让开左侧斜切装饰条（26~206px） */
+  top: 34px;
+  font-size: 16px;
+  letter-spacing: 1px;
+  color: var(--sc-dim);
+}
+.sc-status.is-error { color: var(--sc-amber); }
 
 /* ===== 三栏栅格 ===== */
 .sc-grid {
@@ -130,11 +139,12 @@ body::before {                            /* 全屏冷色辉光，压低纯色�
 .sc-h220 { flex: none; height: 220px; }
 .sc-h260 { flex: none; height: 260px; }
 
+/* ===== 字号下限 16px：3 米外可读（09 §2.1 第 1 条验收） ===== */
 .sc-panel-title {
   flex: none;
   position: relative;
   margin: 0 0 8px 12px;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
   letter-spacing: 2px;
   color: #BFE3FF;
@@ -149,6 +159,13 @@ body::before {                            /* 全屏冷色辉光，压低纯色�
   border-radius: 2px;
   background: linear-gradient(180deg, var(--sc-cyan), var(--sc-blue));
   box-shadow: 0 0 8px rgba(34, 211, 238, .8);
+}
+.sc-panel-sub {                           /* 标题右侧的活数据（聚焦名、调用次数等） */
+  margin-left: 10px;
+  font-size: 16px;
+  font-weight: 400;
+  letter-spacing: 1px;
+  color: var(--sc-dim);
 }
 
 /* ===== 核心指标 6 卡 ===== */
@@ -177,21 +194,24 @@ body::before {                            /* 全屏冷色辉光，压低纯色�
   font-variant-numeric: tabular-nums;
   text-shadow: 0 0 14px rgba(34, 211, 238, .35);
 }
-.sc-stat-label { margin-top: 2px; font-size: 12.5px; color: var(--sc-dim); letter-spacing: 1px; }
+.sc-stat-label { margin-top: 2px; font-size: 16px; color: var(--sc-dim); letter-spacing: 1px; }
 
 /* ===== 图表容器与骨架占位 ===== */
 .sc-chart { flex: 1; min-height: 0; position: relative; }
-.sc-ph {
-  height: 100%;
+.sc-ph {                                  /* 占位浮在 canvas 之上，有数据后 hidden */
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--sc-dim);
-  font-size: 13px;
+  font-size: 16px;
   letter-spacing: 3px;
   border: 1px dashed rgba(64, 156, 255, .18);
   border-radius: 4px;
+  background: rgba(5, 11, 26, .35);
 }
+.sc-ph[hidden] { display: none; }
 
 /* ===== 底部跑马灯 56px ===== */
 .sc-marquee {
@@ -210,23 +230,25 @@ body::before {                            /* 全屏冷色辉光，压低纯色�
   border: 1px solid rgba(34, 211, 238, .4);
   border-radius: 999px;
   color: var(--sc-cyan);
-  font-size: 13px;
+  font-size: 16px;
   letter-spacing: 2px;
 }
 .sc-marquee-track { flex: 1; overflow: hidden; }
 .sc-marquee-content {
   display: inline-flex;
-  gap: 80px;
+  gap: 0;                                     /* 间距挪到 item 的 margin：两组等宽，-50% 才无缝 */
   white-space: nowrap;
-  font-size: 14.5px;
+  font-size: 17px;
   color: var(--sc-dim);
-  animation: sc-scroll 32s linear infinite;   /* 内容两份，-50% 位移无缝循环 */
+  animation: sc-scroll 40s linear infinite;   /* 内容两份，-50% 位移无缝循环 */
 }
-.sc-marquee-content span::before {
+.sc-feed-group { display: inline-flex; }
+.sc-feed-item { margin-right: 80px; }
+.sc-feed-item::before {
   content: "◆";
   margin-right: 10px;
   color: rgba(34, 211, 238, .75);
-  font-size: 10px;
+  font-size: 13px;                            /* 装饰符，不参与"最小字号"口径 */
   vertical-align: 1px;
 }
 @keyframes sc-scroll {

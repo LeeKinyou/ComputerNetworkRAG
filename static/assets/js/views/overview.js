@@ -15,9 +15,9 @@ window.Views.overview = {
     ];
 
     // ----- 迷你知识图谱 + 分布图表（06 §4.1：只读、纯前端聚合、点击进入图谱页）-----
-    var TYPE_COLORS = (window.Components.graphView && window.Components.graphView.TYPE_COLORS) || {};
+    var TYPE_COLORS = (window.Components.graphLayout && window.Components.graphLayout.TYPE_COLORS) || {};
     function colorOf(t) { return TYPE_COLORS[t] || '#94A3B8'; }
-    var harvest = window.Components.graphView.harvest;
+    var harvest = window.Components.graphLayout.harvest;
 
     var miniEl = ref(null);
     var miniNodes = ref([]);
