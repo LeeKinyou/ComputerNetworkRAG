@@ -15,7 +15,7 @@ import httpx
 import pytest
 
 from app.rag import lightrag_factory
-from app.schemas import DocumentMeta, StepRecord
+from app.schemas import DocumentMeta, KnowledgeNode, StepRecord
 from app.services import screen_service
 from app.storage.sqlite_repo import SqliteRepository, get_repo, init_repo
 
@@ -246,17 +246,14 @@ async def test_chapters_from_filename_regex(repo, monkeypatch):
 
 
 async def test_chapter_entities_from_materialized_table(db_path, repo, monkeypatch):
-    """knowledge_node 由 Task 5.5 建表；建了之后 chapters.entities 自动亮起来。"""
+    """chapters.entities 来自 Task 5.5 物化的 knowledge_node；未归章（chapter=NULL）不计数。"""
     _patch_snapshot(monkeypatch, [], [])
-    async with aiosqlite.connect(db_path) as conn:
-        await conn.execute(
-            "CREATE TABLE knowledge_node (kp_id TEXT PRIMARY KEY, name TEXT, chapter INTEGER)"
-        )
-        await conn.executemany(
-            "INSERT INTO knowledge_node (kp_id, name, chapter) VALUES (?, ?, ?)",
-            [("kp_1", "IP", 4), ("kp_2", "ARP", 4), ("kp_3", "TCP", 5), ("kp_4", "无章", None)],
-        )
-        await conn.commit()
+    await repo.upsert_knowledge_nodes([
+        KnowledgeNode(kp_id=kp, name=name, chapter=chapter, built_at="2026-09-22T00:00:00")
+        for kp, name, chapter in [
+            ("kp_1", "IP", 4), ("kp_2", "ARP", 4), ("kp_3", "TCP", 5), ("kp_4", "无章", None),
+        ]
+    ])
     await _add_document(repo, "d_1", "第4章-网络层.md", chunks=1)
     await _add_document(repo, "d_2", "第5章-运输层.md", chunks=2)
 

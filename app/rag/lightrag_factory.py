@@ -170,6 +170,36 @@ async def get_chunk(chunk_id: str) -> dict | None:
         return None
 
 
+async def complete(prompt: str, system_prompt: str = "") -> str:
+    """单次补全（构建学习路径等离线任务用）：复用建库同一个 LLM 入口与超时配置。"""
+    result = await _llm_model_func(prompt, system_prompt or None)
+    return result if isinstance(result, str) else ""
+
+
+async def get_entity_chunk_ids(names: list[str]) -> dict[str, list[str]]:
+    """实体 → 命中的 chunk_id 列表。图谱节点上的 source_id 在实体合并时会残缺，
+    归章一律以 entity_chunks kv 为准。"""
+    items = await get_lightrag().entity_chunks.get_by_ids(names)
+    return {
+        name: [str(cid) for cid in ((item or {}).get("chunk_ids") or [])]
+        for name, item in zip(names, items)
+    }
+
+
+async def get_chunks_meta(chunk_ids: list[str]) -> dict[str, dict]:
+    """chunk_id → {file_path, doc_id}，供知识点归章。"""
+    items = await get_lightrag().text_chunks.get_by_ids(chunk_ids)
+    out: dict[str, dict] = {}
+    for cid, item in zip(chunk_ids, items):
+        if not item:
+            continue
+        out[cid] = {
+            "file_path": str(item.get("file_path") or ""),
+            "doc_id": str(item.get("full_doc_id") or ""),
+        }
+    return out
+
+
 async def aquery(question: str, mode: str, conversation_history=None) -> str:
     param = QueryParam(
         mode=mode,

@@ -92,6 +92,31 @@ class TouchRecord(BaseModel):
     created_at: str = ""
 
 
+class KnowledgeNode(BaseModel):
+    """图谱实体的物化快照（Task 5.5）：chapter=NULL 表示归章失败，不参与路径。"""
+
+    kp_id: str
+    name: str
+    entity_type: str = "概念"
+    chapter: int | None = None
+    description: str = ""
+    degree: int = 0
+    doc_id: str = ""
+    source_chunk: str = ""
+    built_at: str = ""
+
+
+class PrereqEdge(BaseModel):
+    """前驱边：source 必须先于 target 学，chapter 取自 source 的归属章。"""
+
+    source: str
+    target: str
+    chapter: int
+    reason: str = ""
+    confidence: float = 0.6
+    status: str = "auto"
+
+
 class StepRecord(BaseModel):
     step_id: str = ""
     run_id: str

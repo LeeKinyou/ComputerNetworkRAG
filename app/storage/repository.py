@@ -2,7 +2,9 @@ from abc import ABC, abstractmethod
 
 from app.schemas import (
     DocumentMeta,
+    KnowledgeNode,
     MessageRecord,
+    PrereqEdge,
     RunRecord,
     SessionMeta,
     StepRecord,
@@ -75,6 +77,27 @@ class Repository(ABC):
     @abstractmethod
     async def lookup_kp_ids(self, names: list[str]) -> dict[str, str]:
         """按实体名反查 kp_id，只返回物化快照（knowledge_node）里存在的名字。"""
+
+    # ----- 学习路径物化（Task 5.5） -----
+
+    @abstractmethod
+    async def upsert_knowledge_nodes(self, rows: list[KnowledgeNode]) -> int:
+        """写入/刷新知识点快照，返回写入条数；同一实体名重建不换 kp_id。"""
+
+    @abstractmethod
+    async def list_knowledge_nodes(self, chapter: int | None = None) -> list[KnowledgeNode]:
+        """chapter=None 返回全部（含未归章的实体）。"""
+
+    @abstractmethod
+    async def replace_prereq_edges(self, chapter: int, rows: list[PrereqEdge]) -> int:
+        """整体替换该章的前驱边，重跑幂等。"""
+
+    @abstractmethod
+    async def list_prereq_edges(self, chapter: int | None = None) -> list[PrereqEdge]: ...
+
+    @abstractmethod
+    async def relink_touch_kp_ids(self) -> int:
+        """按 kp_name 回填触达记录的 kp_id（只补空值），返回回填条数。"""
 
     # ----- 大屏聚合（只读） -----
 

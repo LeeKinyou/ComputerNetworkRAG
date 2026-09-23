@@ -8,17 +8,17 @@ logger = logging.getLogger(__name__)
 _NODE_LIMIT_CAP = 2000
 
 
-def _clean_desc(text) -> str:
+def clean_desc(text) -> str:
     """LightRAG 会用内部 <SEP> 拼接多段描述，展示时换成中文分号。"""
     return re.sub(r"\s*<SEP>\s*", "；", str(text or ""))
 
 
-def _node_name(node) -> str:
+def node_name(node) -> str:
     props = node.properties or {}
     return props.get("entity_id") or node.id
 
 
-def _node_type(props: dict) -> str:
+def node_type(props: dict) -> str:
     t = props.get("entity_type") or "概念"
     return "其他" if t.upper() == "UNKNOWN" else t
 
@@ -52,7 +52,7 @@ def _type_of_edge(edge) -> tuple[str, str]:
     return props.get("keywords") or "关联", props.get("description") or ""
 
 
-def _degrees(edges) -> dict[str, int]:
+def degrees(edges) -> dict[str, int]:
     degree: dict[str, int] = {}
     for e in edges:
         degree[e.source] = degree.get(e.source, 0) + 1
@@ -64,13 +64,13 @@ async def get_graph(keyword: str = "", entity_type: str = "", limit: int = 500) 
     limit = max(1, min(limit, _NODE_LIMIT_CAP))
     nodes_raw, edges_raw = await lightrag_factory.get_graph_snapshot()
 
-    types = sorted({_node_type(n.properties or {}) for n in nodes_raw})
+    types = sorted({node_type(n.properties or {}) for n in nodes_raw})
 
     kw = keyword.strip().lower()
     wanted_types = {t.strip() for t in entity_type.split(",") if t.strip()} if entity_type else None
 
     def keep(props: dict) -> bool:
-        if wanted_types is not None and _node_type(props) not in wanted_types:
+        if wanted_types is not None and node_type(props) not in wanted_types:
             return False
         if kw:
             name = str(props.get("entity_id") or "").lower()
@@ -83,19 +83,19 @@ async def get_graph(keyword: str = "", entity_type: str = "", limit: int = 500) 
     truncated = len(selected) > limit
     selected = selected[:limit]
 
-    degree = _degrees(edges_raw)
+    degree = degrees(edges_raw)
 
     nodes = []
     ids: set[str] = set()
     for n in selected:
         props = n.properties or {}
-        name = _node_name(n)
+        name = node_name(n)
         ids.add(name)
         nodes.append({
             "id": name,
             "name": name,
-            "type": _node_type(props),
-            "description": _clean_desc(props.get("description")),
+            "type": node_type(props),
+            "description": clean_desc(props.get("description")),
             "sources": _sources(props),
             "degree": degree.get(name, 0),
         })
@@ -108,7 +108,7 @@ async def get_graph(keyword: str = "", entity_type: str = "", limit: int = 500) 
                 "source": e.source,
                 "target": e.target,
                 "label": label,
-                "description": _clean_desc(desc),
+                "description": clean_desc(desc),
             })
 
     return {"nodes": nodes, "edges": edges, "types": types, "truncated": truncated}
@@ -121,11 +121,11 @@ async def get_screen_aggregates() -> dict:
     前端基于 limit=500 的聚合会让大屏数字小于真实值，两边对不上。
     """
     nodes_raw, edges_raw = await lightrag_factory.get_graph_snapshot()
-    degree = _degrees(edges_raw)
+    degree = degrees(edges_raw)
 
     type_count: dict[str, int] = {}
     for n in nodes_raw:
-        t = _node_type(n.properties or {})
+        t = node_type(n.properties or {})
         type_count[t] = type_count.get(t, 0) + 1
 
     label_count: dict[str, int] = {}
@@ -134,8 +134,8 @@ async def get_screen_aggregates() -> dict:
         label_count[label] = label_count.get(label, 0) + 1
 
     top_entities = [
-        {"name": _node_name(n), "type": _node_type(n.properties or {}),
-         "degree": degree.get(_node_name(n), 0)}
+        {"name": node_name(n), "type": node_type(n.properties or {}),
+         "degree": degree.get(node_name(n), 0)}
         for n in nodes_raw
     ]
     top_entities.sort(key=lambda x: x["degree"], reverse=True)
@@ -156,10 +156,10 @@ async def get_screen_aggregates() -> dict:
 async def get_entity_detail(name: str) -> dict:
     nodes_raw, edges_raw, _ = await lightrag_factory.get_entity_subgraph(name, max_depth=1)
 
-    if not any(_node_name(n) == name for n in nodes_raw):
+    if not any(node_name(n) == name for n in nodes_raw):
         raise KeyError(name)
 
-    props = next((n.properties or {} for n in nodes_raw if _node_name(n) == name), {})
+    props = next((n.properties or {} for n in nodes_raw if node_name(n) == name), {})
 
     neighbors = []
     seen: set[str] = {name}
@@ -168,16 +168,16 @@ async def get_entity_detail(name: str) -> dict:
         if other is None or other in seen:
             continue
         label, desc = _type_of_edge(e)
-        other_props = next((n.properties or {} for n in nodes_raw if _node_name(n) == other), {})
+        other_props = next((n.properties or {} for n in nodes_raw if node_name(n) == other), {})
         neighbors.append({
             "name": other,
             "relation": label,
-            "description": _clean_desc(desc) or _clean_desc(other_props.get("description"))[:80],
+            "description": clean_desc(desc) or clean_desc(other_props.get("description"))[:80],
         })
 
     sub_nodes = [
-        {"id": _node_name(n), "name": _node_name(n), "type": _node_type(n.properties or {}),
-         "description": _clean_desc((n.properties or {}).get("description")), "sources": [], "degree": 0}
+        {"id": node_name(n), "name": node_name(n), "type": node_type(n.properties or {}),
+         "description": clean_desc((n.properties or {}).get("description")), "sources": [], "degree": 0}
         for n in nodes_raw
     ]
     sub_ids = {n["id"] for n in sub_nodes}
@@ -186,13 +186,13 @@ async def get_entity_detail(name: str) -> dict:
         if e.source in sub_ids and e.target in sub_ids:
             label, desc = _type_of_edge(e)
             sub_edges.append({"source": e.source, "target": e.target, "label": label,
-                              "description": _clean_desc(desc)})
+                              "description": clean_desc(desc)})
 
     return {
         "entity": {
             "name": name,
-            "type": _node_type(props),
-            "description": _clean_desc(props.get("description")),
+            "type": node_type(props),
+            "description": clean_desc(props.get("description")),
             "sources": await _resolve_sources(_sources(props)),
         },
         "neighbors": neighbors,
