@@ -1,6 +1,13 @@
 from abc import ABC, abstractmethod
 
-from app.schemas import DocumentMeta, MessageRecord, RunRecord, SessionMeta, StepRecord
+from app.schemas import (
+    DocumentMeta,
+    MessageRecord,
+    RunRecord,
+    SessionMeta,
+    StepRecord,
+    TouchRecord,
+)
 
 
 class Repository(ABC):
@@ -58,6 +65,16 @@ class Repository(ABC):
 
     @abstractmethod
     async def get_run_steps(self, run_id: str) -> list[StepRecord]: ...
+
+    # ----- 知识点触达（Task 5.4） -----
+
+    @abstractmethod
+    async def add_touches(self, records: list[TouchRecord]) -> int:
+        """批量写入触达记录，返回写入条数。"""
+
+    @abstractmethod
+    async def lookup_kp_ids(self, names: list[str]) -> dict[str, str]:
+        """按实体名反查 kp_id，只返回物化快照（knowledge_node）里存在的名字。"""
 
     # ----- 大屏聚合（只读） -----
 

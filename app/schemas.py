@@ -83,6 +83,15 @@ class RunRecord(BaseModel):
     finished_at: str | None = None
 
 
+class TouchRecord(BaseModel):
+    kp_name: str
+    kp_id: str | None = None
+    session_id: str | None = None
+    run_id: str | None = None
+    via: str = "rag_hit"
+    created_at: str = ""
+
+
 class StepRecord(BaseModel):
     step_id: str = ""
     run_id: str

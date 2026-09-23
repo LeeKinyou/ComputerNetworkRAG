@@ -6,6 +6,7 @@ from lightrag.query_validation import MIN_RAG_QUERY_WEIGHT, rag_query_weight
 from app.config import get_settings
 from app.rag import lightrag_factory
 from app.schemas import Event
+from app.services.touch_service import entity_names, record_touches
 from app.storage.repository import Repository
 
 logger = logging.getLogger(__name__)
@@ -77,7 +78,10 @@ class RAGService:
 
         try:
             await self._repo.add_message(session_id, "user", question)
-            chunks, token_iter = await lightrag_factory.astream_query(question, mode)
+            chunks, entities, token_iter = await lightrag_factory.astream_query(question, mode)
+            await record_touches(
+                self._repo, entity_names(entities), "rag_hit", session_id=session_id
+            )
             sources = [
                 {"doc_name": c.get("file_path") or "未知文档",
                  "chunk_id": c.get("chunk_id") or "",
@@ -103,6 +107,7 @@ class RAGService:
         """课程检索（不生成答案），供 course_rag_query 工具使用（05 §2.4）。"""
         resolved = resolve_mode(mode)
         data = await lightrag_factory.aquery_context(query, resolved)
+        await record_touches(self._repo, entity_names(data), "agent_tool")
         chunks = [
             {
                 "doc_name": c.get("file_path") or "未知文档",

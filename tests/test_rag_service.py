@@ -30,11 +30,16 @@ async def repo(tmp_path):
 
 @pytest.fixture
 def patch_astream(monkeypatch):
-    def _patch(chunks=None, deltas=("TCP", " 三次握手", " 是建立连接的过程。"), error=None):
+    def _patch(chunks=None, deltas=("TCP", " 三次握手", " 是建立连接的过程。"), error=None,
+               entities=()):
         async def _astream(question, mode):
             if error is not None:
                 raise error
-            return (chunks if chunks is not None else _fake_chunks()), await _fake_tokens(*deltas)
+            return (
+                chunks if chunks is not None else _fake_chunks(),
+                list(entities),
+                await _fake_tokens(*deltas),
+            )
         monkeypatch.setattr(
             "app.services.rag_service.lightrag_factory.astream_query", _astream
         )

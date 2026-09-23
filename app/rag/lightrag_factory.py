@@ -190,8 +190,8 @@ async def aquery_context(question: str, mode: str) -> dict:
 
 async def astream_query(
     question: str, mode: str
-) -> tuple[list[dict], AsyncIterator[str]]:
-    """流式问答：单次检索+生成，返回（来源分块列表, token 迭代器）。
+) -> tuple[list[dict], list[dict], AsyncIterator[str]]:
+    """流式问答：单次检索+生成，返回（来源分块, 命中实体, token 迭代器）。
 
     缓存命中或无上下文时 LightRAG 返回整段字符串，此处包装为单元素迭代器，
     调用方无需区分。检索/调用失败抛 RuntimeError（aquery_llm 不抛异常而是返回
@@ -202,17 +202,19 @@ async def astream_query(
     if result.get("status") != "success":
         raise RuntimeError(result.get("message") or "RAG 查询失败")
 
-    chunks = list((result.get("data") or {}).get("chunks") or [])
+    data = result.get("data") or {}
+    chunks = list(data.get("chunks") or [])
+    entities = list(data.get("entities") or [])
     llm_resp = result.get("llm_response") or {}
     iterator = llm_resp.get("response_iterator")
 
     if iterator is not None:
-        return chunks, iterator
+        return chunks, entities, iterator
 
     async def _single() -> AsyncIterator[str]:
         yield llm_resp.get("content") or ""
 
-    return chunks, _single()
+    return chunks, entities, _single()
 
 
 async def get_graph_snapshot(max_nodes: int | None = None) -> tuple[list, list]:

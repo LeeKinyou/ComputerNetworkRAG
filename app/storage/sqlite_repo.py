@@ -5,7 +5,14 @@ from pathlib import Path
 
 import aiosqlite
 
-from app.schemas import DocumentMeta, MessageRecord, RunRecord, SessionMeta, StepRecord
+from app.schemas import (
+    DocumentMeta,
+    MessageRecord,
+    RunRecord,
+    SessionMeta,
+    StepRecord,
+    TouchRecord,
+)
 from app.storage.repository import Repository
 
 DDL = """
@@ -68,6 +75,20 @@ CREATE TABLE IF NOT EXISTS agent_steps (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_steps_run ON agent_steps(run_id);
+
+-- 触达记录（Task 5.4）：kp_name 先于 knowledge_node 存在（Task 5.5 建表），
+-- 故 kp_id 可空、由构建脚本按 name 回填；via: rag_hit | agent_tool | path_view
+CREATE TABLE IF NOT EXISTS knowledge_touch (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  kp_name    TEXT NOT NULL,
+  kp_id      TEXT,
+  session_id TEXT,
+  run_id     TEXT,
+  via        TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_kt_kp ON knowledge_touch(kp_id);
+CREATE INDEX IF NOT EXISTS idx_kt_name ON knowledge_touch(kp_name);
 """
 
 _STATUS_FIELDS = {"error", "chunk_count", "parsed_path"}
@@ -261,6 +282,34 @@ class SqliteRepository(Repository):
             data["structured"] = json.loads(data["structured"]) if data["structured"] else None
             steps.append(StepRecord(**data))
         return steps
+
+    # ----- 知识点触达（Task 5.4） -----
+
+    async def add_touches(self, records: list[TouchRecord]) -> int:
+        if not records:
+            return 0
+        ts = now()
+        await self._conn().executemany(
+            "INSERT INTO knowledge_touch (kp_name, kp_id, session_id, run_id, via, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                (r.kp_name, r.kp_id, r.session_id, r.run_id, r.via, r.created_at or ts)
+                for r in records
+            ],
+        )
+        await self._conn().commit()
+        return len(records)
+
+    async def lookup_kp_ids(self, names: list[str]) -> dict[str, str]:
+        """按实体名反查 kp_id，只返回物化快照里存在的名字（未物化的长尾留空由 relink 补）。"""
+        if not names:
+            return {}
+        marks = ",".join("?" * len(names))
+        async with self._conn().execute(
+            f"SELECT kp_id, name FROM knowledge_node WHERE name IN ({marks})", names
+        ) as cur:
+            rows = await cur.fetchall()
+        return {r["name"]: r["kp_id"] for r in rows}
 
     # ----- 大屏聚合（只读） -----
 
