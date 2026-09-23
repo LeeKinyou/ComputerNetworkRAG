@@ -19,6 +19,7 @@ from app.services.graph_service import clean_desc, degrees, node_name, node_type
 logger = logging.getLogger(__name__)
 
 DEFAULT_TOP_N = 40
+LIMIT_CAP = 200                 # /api/path?limit= 的硬上限：防止演示现场手改 URL 拖死浏览器
 MAX_DROP_RATE = 0.3
 MAX_DESC_CHARS = 120          # 单条描述截断长度：一章 40 个节点也不会把 context 撑爆
 DEFAULT_CONFIDENCE = 0.6
@@ -354,3 +355,120 @@ async def materialize(repo, built_at: str | None = None) -> dict:
 
 def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+# ----- 路径查询（Task 5.6） -----
+
+
+async def get_path(repo, chapter: int | None = None, limit: int = DEFAULT_TOP_N) -> dict:
+    """章节 DAG。边一律裁到两端都在节点集内——留一条悬空边，ECharts 关系图直接报错。
+
+    节点带 layer：前端画的是手工坐标（x = 层号 × 180），分层只在这里算一份。
+    """
+    nodes = await repo.list_knowledge_nodes(chapter)
+    selected = select_top(nodes, max(1, min(limit, LIMIT_CAP)))
+    kept = {n.kp_id for n in selected}
+    edges = [
+        e for e in await repo.list_prereq_edges() if e.source in kept and e.target in kept
+    ]
+    layers = _layers(kept, edges)
+    counts = await repo.touch_counts_by_kp(sorted(kept))
+    return {
+        "nodes": [
+            {
+                "kp_id": n.kp_id, "name": n.name, "type": n.entity_type,
+                "chapter": n.chapter, "degree": n.degree, "description": n.description,
+                "layer": layers.get(n.kp_id, 0),
+                "touch_count": counts.get(n.kp_id, 0),
+            }
+            for n in selected
+        ],
+        "edges": [
+            {
+                "source": e.source, "target": e.target, "chapter": e.chapter,
+                "reason": e.reason, "confidence": e.confidence,
+            }
+            for e in edges
+        ],
+        "chapters": await repo.list_chapters(),
+        "truncated": len(selected) < sum(1 for n in nodes if n.chapter is not None),
+    }
+
+
+async def plan(repo, target: str) -> dict:
+    """到 target 的必修链：反向 BFS 取前驱闭包，再按（章号，拓扑层）排序。
+
+    章号作主键是刻意的——LLM 抽错边也只会把同章内部顺序排歪，不会让第 8 章插到第 2 章前面。
+    """
+    nodes = {n.kp_id: n for n in await repo.list_knowledge_nodes()}
+    if target not in nodes:
+        raise KeyError(target)
+
+    all_edges = await repo.list_prereq_edges()
+    incoming: dict[str, list[PrereqEdge]] = defaultdict(list)
+    for e in all_edges:
+        if e.source in nodes and e.target in nodes:      # 重建改名后会留下悬空边，跳过而不是 500
+            incoming[e.target].append(e)
+
+    closure = {target}
+    queue = [target]
+    while queue:
+        for e in incoming[queue.pop(0)]:
+            if e.source not in closure:
+                closure.add(e.source)
+                queue.append(e.source)
+
+    sub = [e for e in all_edges if e.source in closure and e.target in closure and e.source != e.target]
+    layers = _layers(closure, sub)
+    strongest: dict[str, PrereqEdge] = {}
+    for e in sub:
+        if e.target not in strongest or e.confidence > strongest[e.target].confidence:
+            strongest[e.target] = e
+    counts = await repo.touch_counts_by_kp(sorted(closure))
+
+    def step(n: KnowledgeNode) -> dict:
+        return {
+            "kp_id": n.kp_id, "name": n.name, "type": n.entity_type,
+            "chapter": n.chapter, "degree": n.degree,
+            "reason": strongest[n.kp_id].reason if n.kp_id in strongest else "",
+            "touch_count": counts.get(n.kp_id, 0),
+        }
+
+    steps = sorted(
+        (step(nodes[kp_id]) for kp_id in closure),
+        key=lambda s: (s["chapter"] or 0, layers[s["kp_id"]], s["name"]),
+    )
+    goal = step(nodes[target])
+    return {
+        "target": {k: goal[k] for k in ("kp_id", "name", "type", "chapter", "degree")},
+        "steps": steps,
+        "no_prereq": len(steps) == 1,
+    }
+
+
+def _layers(names, edges) -> dict[str, int]:
+    """最长路径分层：层号 = 到该点的最长链长度。环内节点强行取最小 ID 入队，保证一定收敛。"""
+    outgoing: dict[str, list[str]] = defaultdict(list)
+    indegree: Counter = Counter()
+    for e in edges:
+        outgoing[e.source].append(e.target)
+        indegree[e.target] += 1
+    layer = dict.fromkeys(names, 0)
+    remaining = set(names)
+    ready = sorted(n for n in names if indegree[n] == 0)
+    while remaining:
+        batch = ready or [min(remaining)]
+        ready = []
+        for node in batch:
+            if node not in remaining:
+                continue
+            remaining.discard(node)
+            for nxt in outgoing[node]:
+                if nxt not in remaining:      # 环里的回边：不能回写已发出节点的层号
+                    continue
+                layer[nxt] = max(layer[nxt], layer[node] + 1)
+                indegree[nxt] -= 1
+                if indegree[nxt] == 0:
+                    ready.append(nxt)
+        ready = sorted(set(ready))
+    return layer

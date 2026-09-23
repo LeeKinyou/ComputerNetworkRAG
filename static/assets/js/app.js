@@ -32,6 +32,11 @@
         '<circle cx="18" cy="18.5" r="2.4"/><path d="M8.2 10.8 15.8 6.6M8.2 13.2 15.8 17.4"/></svg>',
     },
     {
+      key: 'path', label: '学习路径', short: '路径',
+      icon: ICON_SVG + '<circle cx="5.5" cy="18" r="2.4"/><circle cx="12" cy="12" r="2.4"/>' +
+        '<circle cx="18.5" cy="6" r="2.4"/><path d="M7.6 16.2 10.2 13.8M13.8 10.2 16.4 7.8"/></svg>',
+    },
+    {
       key: 'rag', label: 'RAG 问答', short: '问答',
       icon: ICON_SVG + '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>' +
         '<path d="M8 8h8M8 11.5h5"/></svg>',
@@ -120,6 +125,7 @@
 
   app.component('overview-view', window.Views.overview);
   app.component('graph-view', window.Views.graph);
+  app.component('path-view', window.Views.path);
   app.component('rag-view', window.Views.rag);
   app.component('agent-view', window.Views.agent);
   app.component('library-view', window.Views.library);

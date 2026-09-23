@@ -11,6 +11,7 @@ from app.api.approval import router as approval_router
 from app.api.documents import router as documents_router
 from app.api.graph import router as graph_router
 from app.api.health import router as health_router
+from app.api.path import router as path_router
 from app.api.rag import router as rag_router
 from app.api.screen import router as screen_router
 from app.api.sessions import router as sessions_router
@@ -64,6 +65,7 @@ app = FastAPI(title="计算机网络课程智能问答系统", lifespan=lifespan
 app.include_router(health_router)
 app.include_router(documents_router)
 app.include_router(graph_router)
+app.include_router(path_router)
 app.include_router(rag_router)
 app.include_router(agent_router)
 app.include_router(approval_router)

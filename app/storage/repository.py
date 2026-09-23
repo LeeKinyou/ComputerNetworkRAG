@@ -96,6 +96,14 @@ class Repository(ABC):
     async def list_prereq_edges(self, chapter: int | None = None) -> list[PrereqEdge]: ...
 
     @abstractmethod
+    async def list_chapters(self) -> list[int]:
+        """物化快照里有知识点的章节号，升序。"""
+
+    @abstractmethod
+    async def touch_counts_by_kp(self, kp_ids: list[str]) -> dict[str, int]:
+        """按 kp_id 统计触达次数，未触达的 ID 不出现在结果里。"""
+
+    @abstractmethod
     async def relink_touch_kp_ids(self) -> int:
         """按 kp_name 回填触达记录的 kp_id（只补空值），返回回填条数。"""
 

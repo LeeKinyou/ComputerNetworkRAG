@@ -99,5 +99,6 @@ def test_graph_view_delegates_layout_to_shared_module():
 
 
 def test_resource_version_bumped_on_both_pages():
+    """两个页面共用一个全局版本号：改过 JS/CSS 必须整站 +1，否则演示时吃到旧缓存。"""
     versions = set(re.findall(r"\?v=(m\d+)", SCREEN_HTML)) | set(re.findall(r"\?v=(m\d+)", INDEX_HTML))
-    assert versions == {"m70"}
+    assert versions == {"m71"}

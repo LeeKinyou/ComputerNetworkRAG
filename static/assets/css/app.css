@@ -447,6 +447,59 @@ table.doc-table tbody tr:hover { background: var(--bg-subtle); }
 .side-open-btn { display: none; }
 
 /* ============================================================
+   学习路径（09 §3.5）
+   ============================================================ */
+.path-target { position: relative; flex: 1; min-width: 220px; }
+.path-suggest {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 30;
+  background: var(--card-color); border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm); box-shadow: 0 8px 24px rgba(9, 9, 11, .08); overflow: hidden;
+}
+.path-suggest-item {
+  display: flex; justify-content: space-between; gap: 8px;
+  padding: 8px 10px; font-size: 13px; cursor: pointer;
+}
+.path-suggest-item:hover { background: var(--bg-subtle); }
+
+.path-legend {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 4px 8px 8px; font-size: 12.5px; color: var(--text-secondary);
+}
+.path-legend .lg {
+  display: inline-block; width: 12px; height: 12px; border-radius: 4px;
+  margin-right: 5px; vertical-align: -1px; border: 1.5px solid;
+}
+.lg-plain { background: #FAFAFA; border-color: #D4D4D8; }
+.lg-touched { background: var(--accent-soft); border-color: var(--accent); }
+.lg-planned { background: var(--accent-soft); border-color: var(--accent-deep); border-width: 2.5px; }
+
+/* 路径页顶部有章节条 + 必修链卡片，画布比图谱页矮一档，避免整页滚动 */
+.path-canvas { height: calc(100vh - 340px); min-height: 440px; }
+
+.path-plan { padding: 12px 16px; }
+.path-plan-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.path-steps {
+  list-style: none; margin: 0; padding: 0 0 4px;
+  display: flex; gap: 10px; overflow-x: auto;
+}
+.path-steps li {
+  display: flex; gap: 8px; align-items: flex-start; flex: none; width: 210px;
+  padding: 10px; border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm); background: var(--bg-subtle);
+}
+.path-steps li.goal { border-color: var(--accent-deep); background: var(--accent-soft); }
+.path-step-no {
+  flex: none; width: 20px; height: 20px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: #fff; border: 1px solid var(--border-strong);
+  font-size: 11.5px; color: var(--text-secondary);
+}
+.path-steps li.goal .path-step-no { border-color: var(--accent-deep); color: var(--accent-deep); font-weight: 600; }
+.path-step-name { font-size: 13.5px; font-weight: 600; display: flex; gap: 6px; align-items: baseline; }
+.path-step-reason { font-size: 12px; line-height: 1.5; color: var(--text-secondary); margin-top: 2px; }
+.path-plan code, .warn-bar code { font-family: var(--mono); font-size: 12px; }
+
+/* ============================================================
    移动端（≤767px）
    桌面端布局不受本块影响：这里只做重排与降密度，不引入新视觉语言
    ============================================================ */
@@ -504,6 +557,11 @@ table.doc-table tbody tr:hover { background: var(--bg-subtle); }
   /* touch-action 让单指竖向滑动归浏览器（页面滚动），双指手势归 echarts 缩放 */
   .graph-canvas { height: 54dvh; min-height: 320px; touch-action: pan-y; }
   .truncated-bar { font-size: 12.5px; }
+
+  /* ---- 学习路径 ---- */
+  .path-canvas { height: 46dvh; min-height: 320px; touch-action: pan-y; }
+  .path-legend { gap: 10px; font-size: 12px; }
+  .path-steps li { width: 168px; }
 
   /* 实体详情：右侧抽屉改底部面板，380px 定宽在手机上会顶出屏幕左缘 */
   .drawer {

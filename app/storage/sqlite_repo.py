@@ -407,6 +407,26 @@ class SqliteRepository(Repository):
             rows = await cur.fetchall()
         return [PrereqEdge(**dict(row)) for row in rows]
 
+    async def list_chapters(self) -> list[int]:
+        """物化快照里真正有知识点的章节：下拉框只列有数据的章，别让人点开空图。"""
+        async with self._conn().execute(
+            "SELECT DISTINCT chapter FROM knowledge_node "
+            "WHERE chapter IS NOT NULL ORDER BY chapter"
+        ) as cur:
+            rows = await cur.fetchall()
+        return [int(r["chapter"]) for r in rows]
+
+    async def touch_counts_by_kp(self, kp_ids: list[str]) -> dict[str, int]:
+        if not kp_ids:
+            return {}
+        marks = ",".join("?" * len(kp_ids))
+        async with self._conn().execute(
+            f"SELECT kp_id, COUNT(*) AS n FROM knowledge_touch WHERE kp_id IN ({marks}) GROUP BY kp_id",
+            list(kp_ids),
+        ) as cur:
+            rows = await cur.fetchall()
+        return {r["kp_id"]: r["n"] for r in rows}
+
     async def relink_touch_kp_ids(self) -> int:
         """按 kp_name 回填触达记录的 kp_id；只补空值，已有 ID 不覆盖。返回回填条数。"""
         cur = await self._conn().execute(
