@@ -48,6 +48,45 @@ def test_canvas_uses_manual_coordinates_not_force_layout():
     assert "symbol: 'roundRect'" in GRAPH_JS          # 圆角矩形比圆形放得下中文标签
 
 
+def test_fit_box_magnifies_but_never_shrinks():
+    """symbolSize 是绝对像素：坐标一旦被缩小绘制，方块就叠成一块（实测 280 节点时行距 7px 对高 44px）。"""
+    assert re.search(r"Math\.max\(\s*1,\s*Math\.min\(", GRAPH_JS), "fitBox 必须夹住下限 1"
+    # 放大预算先扣掉方块自身半宽，否则最外一列被推出容器
+    assert "2 * MARGIN - maxW" in GRAPH_JS
+
+
+def test_fit_box_centers_exactly_once():
+    """ox 已经把缩放后的包围盒居中了，映射里再加半宽 = 整张网格被推到右下象限（实测只看得见左上 1/4）。"""
+    mapping = GRAPH_JS[GRAPH_JS.index("function fitBox"):GRAPH_JS.index("function planDraw")]
+    assert "+ (b.w * k) / 2" not in mapping
+    assert "+ (b.h * k) / 2" not in mapping
+
+
+def test_capacity_and_layout_share_one_row_count():
+    """手机端每层只有 6 行：容量按 MAX_ROWS=8 估会多算一整列，装不下的靠收紧循环扔掉。"""
+    assert "Math.min(rowsPerLayer()" in GRAPH_JS
+    assert GRAPH_JS.count("rowsPerLayer()") >= 2
+
+
+def test_canvas_draws_only_what_fits():
+    """放不下的节点直接不画，并把原因通过 cap 事件交给视图说明，而不是糊成一团。"""
+    assert "fitCapacity" in GRAPH_JS
+    assert "drawn.slice(0, cap)" in GRAPH_JS
+    assert "emit('cap'" in GRAPH_JS
+
+
+def test_truncated_canvas_prunes_edges_to_drawn_nodes():
+    """截断后两端有一端没画的边必须一起裁掉：留一条悬空边 ECharts 关系图就报错。"""
+    body = GRAPH_JS[GRAPH_JS.index("function buildOption"):]
+    assert "isDrawn" in body and "links: graphEdges" in body
+
+
+def test_ring_falls_back_to_layers_when_circle_cannot_hold_nodes():
+    """环形周长是硬上限：半径 260px 的圆周放 20 个 ~200px 宽的方块必然首尾相压。"""
+    assert "ringCapacity" in GRAPH_JS
+    assert "fellBack" in GRAPH_JS
+
+
 def test_ring_layout_is_gated_at_20_nodes():
     assert re.search(r"RING_MAX\s*=\s*20", VIEW_JS)
     assert ":disabled=\"ringDisabled\"" in VIEW_JS
@@ -73,6 +112,13 @@ def test_empty_states_point_at_the_build_command():
     """prereq_edge 为空（未跑构建脚本）是演示现场最容易撞上的空态，必须给出命令。"""
     assert VIEW_JS.count("build_learning_path") >= 2
     assert "还没有前驱关系" in VIEW_JS
+
+
+def test_truncated_canvas_is_explained_in_the_view():
+    """画布少画了节点必须就地说明，不能让用户以为"这一章只有 32 个知识点"。"""
+    assert "@cap=\"onCap\"" in VIEW_JS
+    assert "画布只放得下" in VIEW_JS
+    assert "capInfo" in VIEW_JS
 
 
 def test_tooltips_escape_server_text():

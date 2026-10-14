@@ -1,4 +1,5 @@
 import json
+import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +17,8 @@ from app.schemas import (
     TouchRecord,
 )
 from app.storage.repository import Repository
+
+logger = logging.getLogger(__name__)
 
 DDL = """
 CREATE TABLE IF NOT EXISTS documents (
@@ -140,6 +143,10 @@ class SqliteRepository(Repository):
     async def init(self) -> None:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._db = await aiosqlite.connect(self._db_path)
+        # 构建脚本与服务进程会并发写同一个库文件：默认 rollback journal 下并发写直接
+        # 报 database is locked，WAL 让读写互不阻塞，busy_timeout 兜住偶发的写锁竞争。
+        await self._db.execute("PRAGMA journal_mode=WAL")
+        await self._db.execute("PRAGMA busy_timeout=5000")
         self._db.row_factory = aiosqlite.Row
         await self._db.executescript(DDL)
         await self._db.commit()
@@ -382,19 +389,62 @@ class SqliteRepository(Repository):
         return [KnowledgeNode(**dict(row)) for row in rows]
 
     async def replace_prereq_edges(self, chapter: int, rows: list[PrereqEdge]) -> int:
-        """按章整体替换：重跑同一章不累积旧边（§3.3 幂等要求）。"""
-        await self._conn().execute("DELETE FROM prereq_edge WHERE chapter = ?", (chapter,))
-        if rows:
-            await self._conn().executemany(
-                "INSERT INTO prereq_edge (source, target, chapter, reason, confidence, status) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                [
-                    (r.source, r.target, r.chapter, r.reason, r.confidence, r.status)
-                    for r in rows
-                ],
+        """按章整体替换：重跑同一章不累积旧边（§3.3 幂等要求）。
+
+        主键是全局的 (source, target)，替换却是按章做的，所以先挑出被别的章占用的键
+        跳过（人工把一条边改到别的章之后，重跑本章不该整批崩掉）；删与插放在同一个
+        事务里，中途报错必须回滚，否则本章会停在"旧边已删、新边半截"的空状态。
+        返回真正写入的条数。
+        """
+        conn = self._conn()
+        await conn.execute("BEGIN IMMEDIATE")
+        try:
+            blocked = set()
+            if rows:
+                keys = ", ".join(["(?, ?)"] * len(rows))
+                params: list[object] = []
+                for r in rows:
+                    params.extend((r.source, r.target))
+                async with conn.execute(
+                    f"SELECT source, target, chapter FROM prereq_edge "
+                    f"WHERE (source, target) IN ({keys})",
+                    tuple(params),
+                ) as cur:
+                    for row in await cur.fetchall():
+                        if row["chapter"] != chapter:
+                            blocked.add((row["source"], row["target"]))
+                accepted = [r for r in rows if (r.source, r.target) not in blocked]
+            else:
+                accepted = []
+
+            await conn.execute("DELETE FROM prereq_edge WHERE chapter = ?", (chapter,))
+            if accepted:
+                await conn.executemany(
+                    "INSERT INTO prereq_edge (source, target, chapter, reason, confidence, status) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    [
+                        (r.source, r.target, r.chapter, r.reason, r.confidence, r.status)
+                        for r in accepted
+                    ],
+                )
+            await conn.commit()
+        except BaseException:
+            await conn.rollback()
+            raise
+
+        if blocked:
+            logger.warning(
+                "第 %s 章有 %s 条边的 (source, target) 已被其他章占用，本次未覆盖",
+                chapter, len(blocked),
             )
-        await self._conn().commit()
-        return len(rows)
+        return len(accepted)
+
+    async def count_prereq_edges(self, chapter: int) -> int:
+        async with self._conn().execute(
+            "SELECT COUNT(*) FROM prereq_edge WHERE chapter = ?", (chapter,)
+        ) as cur:
+            row = await cur.fetchone()
+        return int(row[0])
 
     async def list_prereq_edges(self, chapter: int | None = None) -> list[PrereqEdge]:
         sql = "SELECT * FROM prereq_edge"
@@ -426,6 +476,30 @@ class SqliteRepository(Repository):
         ) as cur:
             rows = await cur.fetchall()
         return {r["kp_id"]: r["n"] for r in rows}
+
+    async def touch_coverage(self) -> dict:
+        """覆盖率的分母必须与 #/path 一样只算已归章的知识点，否则大屏和路径页两个数字对不上。
+        未回填 kp_id 的触达（5.4 早于 5.5 上线时留下的）进不了 JOIN，等于不计——宁少不假。"""
+        async with self._conn().execute(
+            """
+            SELECT COUNT(*) AS total,
+                   COALESCE(SUM(CASE WHEN t.n > 0 THEN 1 ELSE 0 END), 0) AS touched
+            FROM knowledge_node kn
+            LEFT JOIN (
+              SELECT kp_id, COUNT(*) AS n FROM knowledge_touch
+              WHERE kp_id IS NOT NULL GROUP BY kp_id
+            ) t ON t.kp_id = kn.kp_id
+            WHERE kn.chapter IS NOT NULL
+            """
+        ) as cur:
+            row = await cur.fetchone()
+        total = int(row["total"] or 0)
+        touched = int(row["touched"] or 0)
+        return {
+            "touched": touched,
+            "total": total,
+            "rate": round(touched / total, 4) if total else 0.0,
+        }
 
     async def relink_touch_kp_ids(self) -> int:
         """按 kp_name 回填触达记录的 kp_id；只补空值，已有 ID 不覆盖。返回回填条数。"""

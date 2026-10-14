@@ -288,14 +288,13 @@ async def test_extract_prereqs_prompt_carries_names_and_truncated_desc():
     assert drafts[0]["source"] == "滑动窗口"
 
 
-async def test_extract_prereqs_llm_failure_returns_empty(caplog):
+async def test_extract_prereqs_llm_failure_raises():
+    """失败必须上抛：吞成空列表会让"额度 403"看起来像"这一章没有前置关系"。"""
     async def boom(prompt, system=""):
         raise RuntimeError("HTTP 403")
 
-    with caplog.at_level(logging.WARNING):
-        drafts = await path_service.extract_prereqs([node("A", 4)], boom)
-    assert drafts == []
-    assert "抽取" in caplog.text or "403" in caplog.text
+    with pytest.raises(path_service.PrereqExtractionError):
+        await path_service.extract_prereqs([node("A", 4)], boom)
 
 
 # ----- 落库 -----
@@ -318,6 +317,33 @@ async def test_replace_prereq_edges_is_idempotent(repo):
     for _ in range(2):
         await repo.replace_prereq_edges(4, [edge("A", "B")])
     assert len(await repo.list_prereq_edges(4)) == 1
+
+
+async def test_replace_prereq_edges_skips_key_owned_by_other_chapter(repo):
+    """主键是 (source,target)：边被人工挪到别的章后重跑本章不能整批崩掉。"""
+    await repo.replace_prereq_edges(5, [edge("A", "B", chapter=5)])
+    assert await repo.replace_prereq_edges(4, [edge("A", "B")]) == 0
+    saved = await repo.list_prereq_edges()
+    assert len(saved) == 1 and saved[0].chapter == 5       # 别章的边保持原样
+
+
+async def test_replace_prereq_edges_rolls_back_on_bad_row(repo):
+    """删+插必须同事务：批次中途报错不能留下"旧边已删、新边半截"的空章。"""
+    await repo.replace_prereq_edges(4, [edge("A", "B", reason="已建")])
+
+    with pytest.raises(Exception):
+        await repo.replace_prereq_edges(4, [edge("C", "D"), edge("C", "D")])  # 批内撞主键
+
+    saved = await repo.list_prereq_edges(4)
+    assert [e.source for e in saved] == [path_service.kp_id_for("A")]
+
+
+async def test_count_prereq_edges_is_per_chapter(repo):
+    assert await repo.count_prereq_edges(4) == 0
+    await repo.replace_prereq_edges(4, [edge("A", "B")])
+    await repo.replace_prereq_edges(5, [edge("C", "D", chapter=5)])
+    assert await repo.count_prereq_edges(4) == 1
+    assert await repo.count_prereq_edges(6) == 0
 
 
 async def test_upsert_nodes_keeps_stable_kp_id(repo):
@@ -396,6 +422,43 @@ async def test_build_chapter_without_nodes_is_noop(repo):
 
     report = await path_service.build_chapter(repo, 7, never)
     assert report["nodes"] == 0 and report["kept"] == 0 and report["passed"] is True
+
+
+async def test_build_chapter_llm_failure_preserves_edges(repo):
+    """百炼免费额度 403 时：原实现吞异常→空边集→按章 DELETE 把已建好的边清空，还打 [OK] 退 0。"""
+    await repo.upsert_knowledge_nodes([node("A", 4), node("B", 4)])
+    await repo.replace_prereq_edges(4, [edge("A", "B", reason="已建")])
+
+    async def boom(prompt, system=""):
+        raise RuntimeError("HTTP 403：免费额度已耗尽")
+
+    report = await path_service.build_chapter(repo, 4, boom)
+    assert report["passed"] is False and report["write_skipped"] is True
+    saved = await repo.list_prereq_edges(4)
+    assert len(saved) == 1 and saved[0].reason == "已建"
+
+
+async def test_build_chapter_unusable_output_preserves_edges(repo):
+    """调用成功但一个字都没抽出来，同样不能当成"这一章没有前置关系"覆盖掉旧数据。"""
+    await repo.upsert_knowledge_nodes([node("A", 4), node("B", 4)])
+    await repo.replace_prereq_edges(4, [edge("A", "B", reason="已建")])
+
+    async def junk(prompt, system=""):
+        return "抱歉，我无法回答这个问题。"
+
+    report = await path_service.build_chapter(repo, 4, junk)
+    assert report["passed"] is False and report["write_skipped"] is True
+    assert len(await repo.list_prereq_edges(4)) == 1
+
+
+async def test_build_chapter_success_marks_write_not_skipped(repo):
+    await repo.upsert_knowledge_nodes([node("A", 4), node("B", 4)])
+
+    async def ok(prompt, system=""):
+        return json.dumps({"edges": [{"source": "A", "target": "B", "confidence": 0.9}]})
+
+    report = await path_service.build_chapter(repo, 4, ok)
+    assert report["write_skipped"] is False and report["passed"] is True
 
 
 # ----- CLI -----

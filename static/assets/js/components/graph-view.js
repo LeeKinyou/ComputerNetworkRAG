@@ -240,9 +240,11 @@ window.Components.graphView = {
     });
 
     function resize() { if (chart) chart.resize(); }
-    function relayout() { frozenPos = null; render(); }
+    function relayout() { frozenPos = null; render(); freezeIfReady(); }
 
-    watch(function () { return props.nodes; }, function () { frozenPos = null; render(); });
+    // 换数据等于换拓扑：旧坐标作废，重跑力导后必须马上重新冻结，
+    // 否则这一次交互就把图留在"标签全开、坐标不冻结"的实时态里出不来
+    watch(function () { return props.nodes; }, function () { frozenPos = null; render(); freezeIfReady(); });
     watch(function () { return props.selectedName; }, function (name) { renderSoft(); applyFocus(name); });
 
     return { el: el, relayout: relayout, resize: resize };

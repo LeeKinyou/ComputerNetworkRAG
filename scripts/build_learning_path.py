@@ -50,8 +50,8 @@ async def main(argv=None) -> int:
 
     repo = SqliteRepository(DATA_DIR / "app.db")
     await repo.init()
-    await lightrag_factory.init_lightrag()
     try:
+        await lightrag_factory.init_lightrag()
         built = await path_service.materialize(repo)
         relinked = await repo.relink_touch_kp_ids()
         print(f"物化知识点 {built['nodes']} 个：归章 {built['in_chapter']}、"
@@ -67,16 +67,19 @@ async def main(argv=None) -> int:
                 repo, chapter, lightrag_factory.complete, top_n=args.top_n
             )
             flag = "OK " if report["passed"] else "FAIL"
+            tail = (f"，未覆盖原有边（{report['error']}）" if report["write_skipped"] else "")
             print(f"[{flag}] 第 {chapter} 章：知识点 {report['nodes']}，"
                   f"保留边 {report['kept']}，丢弃 {sum(report['dropped'].values())} "
                   f"{report['dropped']}，破环 {report['removed_cycles']}，"
-                  f"丢弃率 {report['drop_rate']:.0%}")
+                  f"丢弃率 {report['drop_rate']:.0%}"
+                  f"{tail}")
             if not report["passed"]:
                 failed.append(chapter)
 
         if failed:
-            print(f"丢弃率超 {path_service.MAX_DROP_RATE:.0%} 的章节：{failed}"
-                  "——prompt 或知识点选取有问题，需人工介入", file=sys.stderr)
+            print(f"未通过的章节：{failed}——丢弃率超 {path_service.MAX_DROP_RATE:.0%} "
+                  "是 prompt 或知识点选取有问题，write_skipped 是 LLM 调用失败或抽空"
+                  "（原有边已保留），均需人工介入", file=sys.stderr)
             return 1
         return 0
     finally:

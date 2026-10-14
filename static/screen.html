@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>数据大屏 · 计算机网络课程智能问答系统</title>
-  <link rel="stylesheet" href="/assets/css/screen.css?v=m71">
+  <link rel="stylesheet" href="/assets/css/screen.css?v=m75">
   <script src="https://registry.npmmirror.com/echarts/5.5.1/files/dist/echarts.min.js"></script>
   <script>window.echarts || document.write('<script src="/assets/lib/echarts.min.js"><\/script>');</script>
 </head>
@@ -27,6 +27,14 @@
             <div class="sc-stat"><div class="sc-stat-value" id="stat-chunks">—</div><div class="sc-stat-label">文本分块</div></div>
             <div class="sc-stat"><div class="sc-stat-value" id="stat-sessions">—</div><div class="sc-stat-label">问答会话</div></div>
             <div class="sc-stat"><div class="sc-stat-value" id="stat-runs">—</div><div class="sc-stat-label">Agent 运行</div></div>
+            <div class="sc-stat sc-stat-wide">
+              <div class="sc-stat-value" id="stat-coverage">—</div>
+              <div class="sc-stat-copy">
+                <div class="sc-stat-label">知识点触达覆盖率</div>
+                <div class="sc-stat-sub" id="coverageSub">尚未物化知识点</div>
+              </div>
+              <div class="sc-progress"><i id="coverageBar"></i></div>
+            </div>
           </div>
         </div>
         <div class="sc-panel sc-grow">
@@ -70,7 +78,7 @@
     </footer>
   </div>
 
-  <script src="/assets/js/components/graph-layout.js?v=m71"></script>
-  <script src="/assets/js/screen/screen.js?v=m71"></script>
+  <script src="/assets/js/components/graph-layout.js?v=m75"></script>
+  <script src="/assets/js/screen/screen.js?v=m75"></script>
 </body>
 </html>

@@ -1,8 +1,9 @@
 # 04 · API 接口设计
 
-> 版本 v0.1 ｜ 2026-09-08 ｜ 状态：待评审
+> 版本 v0.2 ｜ 2026-09-23 ｜ 状态：待评审
 > 约定：所有接口同源（`http://127.0.0.1:8000`），JSON 请求/响应；SSE 响应头 `Content-Type: text/event-stream`。
 > 统一错误体：`{ "error_code": "string", "message": "中文说明", "detail": "可选" }`。
+> 变更（v0.2）：新增 §8 数据大屏类、§9 学习路径类（原"通用约定"顺延为 §10），§1 总览补 4 行；§2–§7 契约未改动。
 
 ## 1. 接口总览
 
@@ -22,6 +23,10 @@
 | GET | `/api/sessions` | 会话列表 | JSON |
 | GET | `/api/sessions/{session_id}` | 会话消息 | JSON |
 | GET | `/api/sessions/{session_id}/runs/{run_id}` | Agent 运行 trace 回放 | JSON |
+| GET | `/screen` | 数据大屏独立页面 | HTML |
+| GET | `/api/screen/overview` | 大屏一次性聚合（十字段，字段级降级） | JSON |
+| GET | `/api/path` | 章节知识点先修图（物化快照） | JSON |
+| GET | `/api/path/plan` | 到目标知识点的必修链与学习顺序 | JSON |
 
 ## 2. 系统类
 
@@ -279,7 +284,90 @@ data: {"answer":"……","steps_count":2,"truncated":false}
                 {"role":"assistant","content":"……","run_id":"r_001"} ] }
 ```
 
-## 8. 通用约定
+## 8. 数据大屏类
+
+### 8.1 GET /screen（HTML）
+
+大屏独立页面，非 `/` 单页应用的一个 Tab：深色、固定 1920×1080 画布 + JS 等比缩放。普通路由，注册顺序**必须早于** `StaticFiles("/")` 兜底，否则会被静态挂载吃掉。
+
+### 8.2 GET /api/screen/overview
+
+大屏唯一取数入口。固定十个字段，一次返回：
+
+```json
+{
+  "stats":        { "documents": 12, "documents_indexed": 11, "chunks": 486,
+                    "entities": 1591, "relations": 2375, "sessions": 7 },
+  "entity_types": [ { "type": "CONCEPT", "count": 412 } ],
+  "top_entities": [ { "name": "TCP", "type": "PROTOCOL", "degree": 120 } ],
+  "top_relations":[ { "label": "使用", "count": 88 } ],
+  "chapters":     [ { "chapter": 4, "documents": 3, "chunks": 44, "entities": 512 } ],
+  "tools":        [ { "name": "subnet_calculator", "calls": 31, "avg_ms": 12, "ok_rate": 1.0 } ],
+  "trend":        [ { "date": "2026-09-23", "count": 9 } ],
+  "runs":         { "total": 24, "steps": 136, "interrupted": 2 },
+  "feed":         [ { "text": "192.168.10.137/27……", "created_at": "2026-09-23T10:02:11" } ],
+  "coverage":     { "touched": 50, "total": 1591, "rate": 0.0314 }
+}
+```
+
+约定与口径：
+
+- **永远 200**：十个字段各自 try/except，单字段失败只把自己降级成占位值（`stats`/`runs` 归零、`coverage` 为 `{0,0,0.0}`、数组类为空数组、`trend` 为 14 天全 0），其余字段照常返回，前端面板保留占位文字。**没有"整屏失败"这个状态**；
+- `stats` 与 §2.2 `/api/stats` 调同一个 `core_stats`，两处数字必然一致；
+- `entity_types` / `top_entities` / `top_relations` 来自**同一次全量图谱快照**，不受 §4.1 `/api/graph` 的 `limit` 截断影响（用截断后的子图聚合会让大屏数字小于真实值）；`top_*` 各取前 10；
+- `chapters` 按文件名里的"第 N 章"归章，解析不出的文档不进该图；
+- `tools.avg_ms` 与 `ok_rate` 由 `agent_steps` 自连接 `(run_id, step_no)` 得到——`tool_name` 在 action 行、耗时与状态在 observation 行，直接按 action 行分组会得到全 0；无配对观测行时两字段为 `null`（不是 0）；
+- `trend` 固定 14 天连续序列，缺日补零（否则前端折线会断点）；
+- `feed` 为最近 20 条用户提问，同一秒内用 `rowid` 兜底排序；
+- `coverage` **口径与 `#/path` 完全同源**：分母 = `knowledge_node` 中 `chapter IS NOT NULL` 的点数，分子 = 其中在 `knowledge_touch` 有 ≥1 条**已回填 kp_id** 记录的点数；未回填的触达不计（宁少不假）；快照为空时 `rate=0.0` 且前端隐藏进度条。
+
+## 9. 学习路径类
+
+读侧两个端点，**只查 SQLite 的物化快照**，不碰 LightRAG、不调 LLM，因此与建库/额度无关、毫秒级返回。数据由离线脚本 `scripts/build_learning_path` 生成（见 09 号文档 §3.3）。
+
+### 9.1 GET /api/path?chapter=&limit=
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `chapter` | `0` | 章号；`0` 或省略 = 全部章，每章各取前 `limit` 个知识点 |
+| `limit` | `40` | 每章知识点上限，**硬上限 200**（防演示现场手改 URL 拖死浏览器） |
+
+```json
+{
+  "nodes": [ { "kp_id": "kp_1a2b3c4d", "name": "TCP", "type": "PROTOCOL",
+               "chapter": 4, "degree": 120, "description": "……",
+               "layer": 2, "touch_count": 3 } ],
+  "edges": [ { "source": "kp_…", "target": "kp_…", "chapter": 4,
+               "reason": "TCP 头部字段建立在 IP 数据报封装之上", "confidence": 0.9 } ],
+  "chapters": [1, 2, 3, 4, 5, 6, 8],
+  "truncated": true
+}
+```
+
+- `layer` 由后端算（最长路径分层，层号 = 到该点的最长链长度），前端据此摆坐标 `x = layer × 180`，不再自行布局；检出环时环内节点强制收敛，不会死循环；
+- `chapters` 只列**真正有知识点**的章，供下拉框渲染，避免点开空图；
+- `truncated=true` 表示本章还有未返回的知识点（受 `limit` 截断）；
+- 边一律裁到两端都在节点集内——留一条悬空边，ECharts 关系图会直接报错；
+- 空态由前端区分文案：无节点 → "尚未物化知识点 / 该范围内没有已归章的知识点"；有节点无边 → 提示"还没有前驱关系"并给出构建命令。
+
+### 9.2 GET /api/path/plan?target=kp_xxxx
+
+到目标知识点的必修链：反向 BFS 取先修闭包，再按 **（章号, 拓扑层, 名字）** 排序。章号作主排序键是刻意的——LLM 抽错边只会把同章内部顺序排歪，不会让第 8 章插到第 2 章前面。
+
+```json
+{
+  "target": { "kp_id": "kp_…", "name": "TCP 拥塞控制", "type": "CONCEPT", "chapter": 5, "degree": 41 },
+  "steps":  [ { "kp_id": "kp_…", "name": "…", "type": "…", "chapter": 5, "degree": 12,
+                "reason": "指向该点的最高置信边的依据", "touch_count": 0 } ],
+  "no_prereq": false
+}
+```
+
+- 闭包只剩目标自身时 `no_prereq=true`（该点没有已知先修）；
+- 目标不在物化快照 → **404** `{"error_code":"PATH_TARGET_NOT_FOUND","message":"目标知识点不在物化快照中，请先运行构建脚本"}`，不做相近名模糊匹配；
+- 重建索引后知识点改名会留下悬空边，读侧跳过而不报 500。
+
+## 10. 通用约定
 
 1. 时间一律 ISO 8601 本地时间字符串（`YYYY-MM-DDTHH:mm:ss`）；
 2. ID 规则：`d_` 文档、`s_` 会话、`r_` 运行，后接 6–8 位随机十六进制；

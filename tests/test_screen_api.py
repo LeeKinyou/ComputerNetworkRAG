@@ -1,10 +1,11 @@
-"""大屏数据端点（09 号文档 Task 5.2）：GET /api/screen/overview 九字段聚合。
+"""大屏数据端点（09 号文档 Task 5.2 / 5.7）：GET /api/screen/overview 十字段聚合。
 
 三个必须锁住的点：
 1. 字段级容错——LightRAG 挂掉时 SQL 部分照常返回，不整屏降级；
 2. 口径一致——entity_types 求和 == stats.entities（现前端聚合受 limit 截断，两边数字对不上）；
 3. 工具统计——agent_steps 里 tool_name 落在 action 行、status/耗时落在 observation 行，
    必须按 (run_id, step_no) 自连接，直接 GROUP BY tool_name 会得到全 0 耗时。
+第十个字段 coverage 是 5.7 加的"知识点触达覆盖率"卡，口径与 #/path 完全同源。
 """
 
 from datetime import datetime, timedelta
@@ -15,13 +16,13 @@ import httpx
 import pytest
 
 from app.rag import lightrag_factory
-from app.schemas import DocumentMeta, KnowledgeNode, StepRecord
+from app.schemas import DocumentMeta, KnowledgeNode, StepRecord, TouchRecord
 from app.services import screen_service
 from app.storage.sqlite_repo import SqliteRepository, get_repo, init_repo
 
-NINE_FIELDS = {
+OVERVIEW_FIELDS = {
     "stats", "entity_types", "top_entities", "top_relations",
-    "chapters", "tools", "trend", "runs", "feed",
+    "chapters", "tools", "trend", "runs", "feed", "coverage",
 }
 
 
@@ -85,10 +86,10 @@ async def _raw_insert_message(db_path, role: str, content: str, created_at: str)
         await conn.commit()
 
 
-async def test_overview_returns_exactly_nine_fields(repo, monkeypatch):
+async def test_overview_returns_exactly_ten_fields(repo, monkeypatch):
     _patch_snapshot(monkeypatch, [_node("IP", "协议")], [])
     data = await screen_service.overview(repo)
-    assert set(data) == NINE_FIELDS
+    assert set(data) == OVERVIEW_FIELDS
 
 
 async def test_lightrag_down_keeps_sql_fields(repo, monkeypatch):
@@ -100,7 +101,7 @@ async def test_lightrag_down_keeps_sql_fields(repo, monkeypatch):
 
     data = await screen_service.overview(repo)
 
-    assert set(data) == NINE_FIELDS
+    assert set(data) == OVERVIEW_FIELDS
     assert data["entity_types"] == []
     assert data["top_entities"] == []
     assert data["top_relations"] == []
@@ -264,6 +265,53 @@ async def test_chapter_entities_from_materialized_table(db_path, repo, monkeypat
     assert chapters[5]["entities"] == 1
 
 
+async def _seed_path(repo) -> None:
+    await repo.upsert_knowledge_nodes([
+        KnowledgeNode(kp_id=kp, name=name, chapter=chapter, built_at="2026-09-22T00:00:00")
+        for kp, name, chapter in [
+            ("kp_1", "IP", 4), ("kp_2", "ARP", 4), ("kp_3", "TCP", 5), ("kp_4", "无章", None),
+        ]
+    ])
+
+
+async def test_coverage_rate_over_materialized_nodes(repo, monkeypatch):
+    """分母 = 进了路径的知识点（chapter 非空），分子 = 其中被触达过的**点**数。"""
+    _patch_snapshot(monkeypatch, [], [])
+    await _seed_path(repo)
+    await repo.add_touches([
+        # 同一点触达两次只算一个点；kp_id=NULL 是 5.4 埋点时还没建快照表留下的，不参与统计
+        TouchRecord(kp_name="IP", kp_id="kp_1", via="rag_hit"),
+        TouchRecord(kp_name="IP", kp_id="kp_1", via="agent_tool"),
+        TouchRecord(kp_name="TCP", kp_id="kp_3", via="rag_hit"),
+        TouchRecord(kp_name="未物化的实体", kp_id=None, via="rag_hit"),
+        TouchRecord(kp_name="无章", kp_id="kp_4", via="rag_hit"),
+    ])
+
+    data = await screen_service.overview(repo)
+
+    assert data["coverage"] == {"touched": 2, "total": 3, "rate": 0.6667}
+
+
+async def test_coverage_zero_on_empty_snapshot(repo, monkeypatch):
+    _patch_snapshot(monkeypatch, [], [])
+    data = await screen_service.overview(repo)
+    assert data["coverage"] == {"touched": 0, "total": 0, "rate": 0.0}
+
+
+async def test_coverage_degrades_alone(repo, monkeypatch):
+    """coverage 取数失败只让它自己归零，不能整屏降级（与其余字段同一条规则）。"""
+    _patch_snapshot(monkeypatch, [], [])
+
+    async def boom():
+        raise RuntimeError("no such table: knowledge_touch")
+
+    monkeypatch.setattr(repo, "touch_coverage", boom)
+    data = await screen_service.overview(repo)
+
+    assert data["coverage"] == {"touched": 0, "total": 0, "rate": 0.0}
+    assert data["stats"]["entities"] == 0
+
+
 async def test_feed_recent_user_questions_only(repo, monkeypatch):
     _patch_snapshot(monkeypatch, [], [])
     sid = await repo.create_session("rag", "测试会话")
@@ -298,7 +346,8 @@ async def test_overview_endpoint_over_http(db_path, monkeypatch):
 
         assert resp.status_code == 200
         body = resp.json()
-        assert set(body) == NINE_FIELDS
+        assert set(body) == OVERVIEW_FIELDS
+        assert body["coverage"] == {"touched": 0, "total": 0, "rate": 0.0}
         assert body["stats"] == stats_resp.json()    # 与 /api/stats 同源同口径，防漂移
         assert body["feed"][0]["text"] == "虚电路和数据报服务的区别？"
         assert body["entity_types"] == [{"type": "概念", "count": 1}]

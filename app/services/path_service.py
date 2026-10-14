@@ -25,6 +25,12 @@ MAX_DESC_CHARS = 120          # 单条描述截断长度：一章 40 个节点�
 DEFAULT_CONFIDENCE = 0.6
 CHAPTER_RE = re.compile(r"第\s*(\d+)\s*章")
 
+
+class PrereqExtractionError(RuntimeError):
+    """抽边调用失败（额度 403、超时、网络）。上抛而不是吞成空列表：
+    空列表会被读成"这一章没有前置关系"，进而把已建好的边覆盖掉。"""
+
+
 LLMComplete = Callable[[str, str], Awaitable[str]]
 
 _EXTRACT_SYSTEM = "你是计算机网络课程的教研组助手，只输出 JSON，不输出任何解释。"
@@ -133,14 +139,13 @@ def _extract_prompt(nodes) -> str:
 
 
 async def extract_prereqs(nodes, llm: LLMComplete) -> list[dict]:
-    """一章的抽边。失败（额度 403、超时、返回垃圾）一律记警告返回空，不中断其余章节。"""
+    """一章的抽边。调用失败一律上抛 PrereqExtractionError，由 build_chapter 决定不覆盖旧边。"""
     if not nodes:
         return []
     try:
         text = await llm(_extract_prompt(nodes), _EXTRACT_SYSTEM)
     except Exception as exc:
-        logger.warning("第 %s 章前驱抽取失败，跳过：%s", nodes[0].chapter, exc)
-        return []
+        raise PrereqExtractionError(f"第 {nodes[0].chapter} 章前驱抽取调用失败：{exc}") from exc
     return parse_edges(text)
 
 
@@ -296,6 +301,8 @@ async def build_chapter(
         "drop_rate": 0.0,
         "removed_cycles": 0,
         "passed": True,
+        "write_skipped": False,
+        "error": "",
     }
     if not selected:
         logger.info("第 %s 章没有可参与路径的知识点，跳过", chapter)
@@ -303,12 +310,33 @@ async def build_chapter(
         return report
 
     by_name = {n.name: n for n in selected}
-    drafts = await extract_prereqs(selected, llm)
+    try:
+        drafts = await extract_prereqs(selected, llm)
+    except PrereqExtractionError as exc:
+        logger.error("%s——保留第 %s 章已有的 %s 条前驱边", exc, chapter,
+                     await repo.count_prereq_edges(chapter))
+        return {**report, "passed": False, "write_skipped": True, "error": str(exc)}
+
     kept, dropped = validate_edges(drafts, by_name, chapter=chapter)
     acyclic, removed = break_cycles(kept)
+    drop_rate = sum(dropped.values()) / len(drafts) if drafts else 0.0
+
+    # 空结果集绝不覆盖非空旧数据：403 之后模型回一句"无法回答"和"这一章真的没有前置"
+    # 在计数上长得一样，前者会把已经建好的边静默删光。
+    if not acyclic:
+        existing = await repo.count_prereq_edges(chapter)
+        if existing:
+            logger.warning("第 %s 章本轮只抽出 0 条边，库中已有 %s 条：不覆盖，判为失败",
+                           chapter, existing)
+            return {**report, "kept": existing, "dropped": dropped,
+                    "cross_chapter": dropped["cross_chapter"],
+                    "removed_cycles": len(removed),
+                    "drop_rate": drop_rate,
+                    "passed": False, "write_skipped": True,
+                    "error": f"本轮 0 条边，库中已有 {existing} 条"}
+
     await repo.replace_prereq_edges(chapter, acyclic)
 
-    drop_rate = sum(dropped.values()) / len(drafts) if drafts else 0.0
     return {
         **report,
         "kept": len(acyclic),

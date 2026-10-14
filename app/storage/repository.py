@@ -90,7 +90,11 @@ class Repository(ABC):
 
     @abstractmethod
     async def replace_prereq_edges(self, chapter: int, rows: list[PrereqEdge]) -> int:
-        """整体替换该章的前驱边，重跑幂等。"""
+        """整体替换该章的前驱边，重跑幂等；返回真正写入的条数。"""
+
+    @abstractmethod
+    async def count_prereq_edges(self, chapter: int) -> int:
+        """该章已有的前驱边条数，用于判断一次构建是不是"空结果覆盖非空旧数据"。"""
 
     @abstractmethod
     async def list_prereq_edges(self, chapter: int | None = None) -> list[PrereqEdge]: ...
@@ -102,6 +106,10 @@ class Repository(ABC):
     @abstractmethod
     async def touch_counts_by_kp(self, kp_ids: list[str]) -> dict[str, int]:
         """按 kp_id 统计触达次数，未触达的 ID 不出现在结果里。"""
+
+    @abstractmethod
+    async def touch_coverage(self) -> dict:
+        """触达覆盖率 {touched, total, rate}：分母只算已归章的知识点，与 #/path 同口径。"""
 
     @abstractmethod
     async def relink_touch_kp_ids(self) -> int:

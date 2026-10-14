@@ -1,4 +1,4 @@
-/* 大屏渲染与动效（09 §2.1 / §2.5）：6 数字卡 + 6 张统计图 + 中央图谱 + 跑马灯。
+/* 大屏渲染与动效（09 §2.1 / §2.5 / Task 5.7）：7 数字卡 + 6 张统计图 + 中央图谱 + 跑马灯。
    纯 CDN ECharts，无框架依赖，与工作台两套生命周期互不干扰（§2.2）。
    数据两条线：/api/screen/overview 每 30s，/api/graph 每 5 分钟（全量重排代价高）。
    任一图取数或渲染失败只降级自己：面板保留占位文字，其余图照常渲染（§2.1 第 2 条）。 */
@@ -123,8 +123,9 @@
   }
 
   // ----- 动效 ①：数字卡滚动进场 -----
-  function rollNumber(id, target) {
+  function rollNumber(id, target, format) {
     var el = document.getElementById(id);
+    var text = format || function (v) { return v.toLocaleString('en-US'); };
     var from = el.dataset.value ? Number(el.dataset.value) : 0;
     var t0 = null;
     function step(ts) {
@@ -132,10 +133,10 @@
       var k = Math.min((ts - t0) / ROLL_MS, 1);
       var eased = 1 - Math.pow(1 - k, 3);
       var v = Math.round(from + (target - from) * eased);
-      el.textContent = v.toLocaleString('en-US');
+      el.textContent = text(v);
       if (k < 1) { requestAnimationFrame(step); return; }
       el.dataset.value = String(target);
-      el.textContent = target.toLocaleString('en-US');
+      el.textContent = text(target);
     }
     requestAnimationFrame(step);
   }
@@ -144,6 +145,22 @@
     var values = [stats.documents, stats.entities, stats.relations,
                   stats.chunks, stats.sessions, runs.total];
     STAT_IDS.forEach(function (id, i) { rollNumber(id, Number(values[i] || 0)); });
+  }
+
+  // 覆盖率放大到万分位再滚动：滚动过程始终是整数，落位才除回两位小数的百分数
+  function applyCoverage(coverage) {
+    if (!coverage) return;   // 后端没有这个字段（改动后没重启）：停在占位符，0.00% 会被读成"没人问过"
+    var c = coverage;
+    rollNumber('stat-coverage', Math.round((c.rate || 0) * 10000), function (v) {
+      return (v / 100).toFixed(2) + '%';
+    });
+    sub('coverageSub', c.total
+      ? '已触达 ' + Number(c.touched).toLocaleString('en-US')
+              + ' / ' + Number(c.total).toLocaleString('en-US') + ' 个知识点'
+      : '尚未物化知识点');
+    var bar = document.getElementById('coverageBar');
+    bar.style.display = c.total ? '' : 'none';
+    bar.style.width = ((c.rate || 0) * 100).toFixed(2) + '%';
   }
 
   function msText(ms) {
@@ -510,6 +527,7 @@
       everLoaded = true;
       lastRuns = data.runs || lastRuns;
       applyStats(data.stats || {}, lastRuns);
+      applyCoverage(data.coverage);
       draw('chart-entity-types', renderTypes, data.entity_types);
       draw('chart-trend', renderTrend, data.trend);
       draw('chart-tools', renderTools, { tools: data.tools, runs: lastRuns });

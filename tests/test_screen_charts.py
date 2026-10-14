@@ -91,6 +91,27 @@ def test_screen_js_degrades_per_chart():
     assert "catch" in SCREEN_JS
 
 
+def test_coverage_card_wired_html_to_script():
+    """覆盖率卡：容器 id 与脚本引用一一对应，分子分母都取后端字段（口径与 #/path 同源）。"""
+    for sid in ("stat-coverage", "coverageSub", "coverageBar"):
+        assert 'id="%s"' % sid in SCREEN_HTML, sid
+        assert sid in SCREEN_JS, sid
+    assert "data.coverage" in SCREEN_JS
+    assert ".touched" in SCREEN_JS and ".total" in SCREEN_JS
+
+
+def test_coverage_card_keeps_placeholder_when_field_absent():
+    """老进程（改动后没重启）返回里没有 coverage 字段：卡片必须停在占位符。
+    滚成 0.00% 会被读成"没人问过"，跟"后端根本不认识这个字段"是两回事。"""
+    assert "if (!coverage) return" in SCREEN_JS
+
+
+def test_coverage_card_spans_whole_stat_grid():
+    """第 7 张卡横跨两列：2×3 栅格里塞第七个小方块会留洞，进度条反而需要整行宽。"""
+    assert "sc-stat-wide" in SCREEN_HTML
+    assert "grid-column: 1 / -1" in SCREEN_CSS
+
+
 def test_graph_view_delegates_layout_to_shared_module():
     assert "graphLayout" in GRAPH_VIEW_JS
     # 类型配色只在共用件里定义一份
@@ -98,7 +119,20 @@ def test_graph_view_delegates_layout_to_shared_module():
     assert "'设备': '#EA580C'" not in GRAPH_VIEW_JS
 
 
+def test_labels_stay_hidden_until_coordinates_are_frozen():
+    """避碰要拿冻结后的坐标算：坐标没就绪时 placed 永不增长，cap 形同虚设，
+    500 个实体的标签会全糊在图上——这正是注释里点名要避免的那一幕。"""
+    body = LAYOUT_JS[LAYOUT_JS.index("placeLabels:"):]
+    assert re.search(r"if \(!frozenPos\) return \{\};", body), "placeLabels 必须先挡掉未冻结态"
+
+
+def test_every_unfreeze_path_refreezes():
+    """清掉 frozenPos 的四处（挂载/尺寸变化/重新布局/换数据）都得重新冻结，漏一处就永远停在力导实时态。"""
+    assert GRAPH_VIEW_JS.count("frozenPos = null; render(); freezeIfReady();") == 2
+    assert GRAPH_VIEW_JS.count("freezeIfReady();") >= 4
+
+
 def test_resource_version_bumped_on_both_pages():
     """两个页面共用一个全局版本号：改过 JS/CSS 必须整站 +1，否则演示时吃到旧缓存。"""
     versions = set(re.findall(r"\?v=(m\d+)", SCREEN_HTML)) | set(re.findall(r"\?v=(m\d+)", INDEX_HTML))
-    assert versions == {"m71"}
+    assert versions == {"m75"}

@@ -66,6 +66,9 @@ window.Components.graphLayout = {
   // 系列不生效，实测照叠）。返回 {节点 id: true} 的显示集合。
   // opts: { cap, fontSize, keep }——keep 为当前选中/聚焦节点，超上限也保留。
   placeLabels: function (nodes, frozenPos, opts) {
+    // 未冻结（力导刚跑完还没 harvest 到坐标）时坐标不可用，避碰与 cap 都无从谈起：
+    // 这时候一个标签都不画，等 freezeIfReady() 拿到坐标再补一次渲染。
+    if (!frozenPos) return {};
     var cap = (opts && opts.cap) || 18;
     var fontSize = (opts && opts.fontSize) || 12;
     var keep = (opts && opts.keep) || '';

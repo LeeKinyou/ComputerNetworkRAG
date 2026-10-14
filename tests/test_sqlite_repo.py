@@ -90,3 +90,20 @@ async def test_repeated_init_idempotent(tmp_path):
     r2 = SqliteRepository(tmp_path / "app.db")
     await r2.init()
     await r2.close()
+
+
+async def test_init_enables_wal_and_busy_timeout(tmp_path):
+    """构建脚本与 :8000 服务会同时写 data/app.db，默认 rollback journal 下必撞 database is locked。"""
+    import aiosqlite
+
+    r = SqliteRepository(tmp_path / "app.db")
+    await r.init()
+    try:
+        async with r._conn().execute("PRAGMA busy_timeout") as cur:
+            assert (await cur.fetchone())[0] == 5000
+    finally:
+        await r.close()
+
+    async with aiosqlite.connect(tmp_path / "app.db") as conn:
+        async with conn.execute("PRAGMA journal_mode") as cur:
+            assert (await cur.fetchone())[0].lower() == "wal"

@@ -1,4 +1,4 @@
-"""大屏一次性聚合数据（09 §2.4）：九个字段，**每个字段各自容错**。
+"""大屏一次性聚合数据（09 §2.4 / Task 5.7）：十个字段，**每个字段各自容错**。
 
 LightRAG 挂掉或单条 SQL 出错只降级该字段（图域三字段为空数组、数字为 0），
 SQL 部分照常返回；大屏对空数组渲染“暂无数据”占位，不整屏降级。
@@ -21,6 +21,7 @@ _CHAPTER_RE = re.compile(r"第\s*(\d+)\s*章")
 _EMPTY_STATS = {"documents": 0, "documents_indexed": 0, "chunks": 0,
                 "entities": 0, "relations": 0, "sessions": 0}
 _EMPTY_RUNS = {"total": 0, "steps": 0, "interrupted": 0}
+_EMPTY_COVERAGE = {"touched": 0, "total": 0, "rate": 0.0}
 
 
 async def _safe(field: str, factory, fallback):
@@ -100,4 +101,5 @@ async def overview(repo: Repository) -> dict:
         "trend": await _safe("trend", lambda: _trend(repo), _trend_series({})),
         "runs": await _safe("runs", lambda: repo.screen_run_stats(), dict(_EMPTY_RUNS)),
         "feed": await _safe("feed", lambda: _feed(repo), []),
+        "coverage": await _safe("coverage", lambda: repo.touch_coverage(), dict(_EMPTY_COVERAGE)),
     }

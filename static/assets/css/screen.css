@@ -168,12 +168,12 @@ body::before {                            /* 全屏冷色辉光，压低纯色�
   color: var(--sc-dim);
 }
 
-/* ===== 核心指标 6 卡 ===== */
+/* ===== 核心指标 6 卡 + 1 张横跨整行的触达覆盖率卡 ===== */
 .sc-stat-grid {
   flex: 1;
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  grid-template-rows: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr) auto;
   gap: 8px;
 }
 .sc-stat {
@@ -195,6 +195,40 @@ body::before {                            /* 全屏冷色辉光，压低纯色�
   text-shadow: 0 0 14px rgba(34, 211, 238, .35);
 }
 .sc-stat-label { margin-top: 2px; font-size: 16px; color: var(--sc-dim); letter-spacing: 1px; }
+
+.sc-stat-wide {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  position: relative;
+  min-height: 58px;
+  padding: 8px 12px 12px;
+}
+.sc-stat-wide .sc-stat-value { min-width: 92px; font-size: 26px; text-align: right; }
+.sc-stat-copy { display: flex; flex-direction: column; align-items: flex-start; }
+.sc-stat-wide .sc-stat-label { margin-top: 0; }
+.sc-stat-sub { margin-top: 2px; font-size: 16px; color: var(--sc-dim); font-variant-numeric: tabular-nums; }
+/* 覆盖率现在只有零点几个百分点，不给最小宽度这条线就看不见；数字本身照实写，不掺水 */
+.sc-progress {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 6px;
+  height: 3px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: rgba(64, 156, 255, .18);
+}
+.sc-progress > i {
+  display: block;
+  height: 100%;
+  min-width: 3px;
+  width: 0;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #22D3EE, #3B82F6);
+  transition: width .8s ease;
+}
 
 /* ===== 图表容器与骨架占位 ===== */
 .sc-chart { flex: 1; min-height: 0; position: relative; }

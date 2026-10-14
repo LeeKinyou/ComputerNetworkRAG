@@ -19,5 +19,5 @@ async def screen_page() -> FileResponse:
 
 @router.get("/api/screen/overview", tags=["screen"])
 async def screen_overview():
-    """大屏一次性聚合数据（09 §2.4）：九个字段，单字段失败只降级自己。"""
+    """大屏一次性聚合数据（09 §2.4 / Task 5.7）：十个字段，单字段失败只降级自己。"""
     return await screen_service.overview(get_repo())

@@ -21,6 +21,7 @@ window.Views.path = {
     var keyword = ref('');
     var typing = ref(false);         // 选中一条建议后收起下拉，但输入框保留知识点名
     var selected = ref(null);
+    var capInfo = ref(null);         // 画布容量不足时 path-graph 报上来的 {drawn,total,fellBack}
     var plan = ref(null);
     var planError = ref('');
     var planning = ref(false);
@@ -41,6 +42,7 @@ window.Views.path = {
         edges.value = data.edges || [];
         chapters.value = data.chapters || [];
         truncated.value = !!data.truncated;
+        capInfo.value = null;
         if (nodes.value.length > RING_MAX) mode.value = 'layer';
         loading.value = false;
         loaded.value = true;
@@ -121,6 +123,11 @@ window.Views.path = {
       return plan.value ? plan.value.steps.map(function (s) { return s.kp_id; }) : [];
     });
 
+    // 画布放不下的部分由组件报上来：要么少画了节点，要么环形退成了分层，两种都要说出来
+    function onCap(info) {
+      capInfo.value = (info.drawn < info.total || info.fellBack) ? info : null;
+    }
+
     onMounted(function () {
       if (!loaded.value) query();
     });
@@ -132,6 +139,7 @@ window.Views.path = {
       keyword: keyword, typing: typing, suggestions: suggestions, selected: selected,
       plan: plan, planIds: planIds, planError: planError, planning: planning,
       ringDisabled: ringDisabled, RING_MAX: RING_MAX,
+      capInfo: capInfo, onCap: onCap,
       pickChapter: pickChapter, onSuggest: onSuggest, openPlan: openPlan,
       planFromSelected: planFromSelected, clearPlan: clearPlan,
       onNodeClick: onNodeClick,
@@ -220,10 +228,17 @@ window.Views.path = {
           还没有前驱关系：这一章只画出了知识点，未画出先后依赖。
           请先执行 <code>uv run python -m scripts.build_learning_path --all</code> 构建路径
         </div>
+        <div class="warn-bar" v-if="capInfo">
+          <span v-if="capInfo.fellBack">环形布局的圆周只绕得下少数方块，已自动改用分层。</span>
+          <span v-if="capInfo.drawn &lt; capInfo.total">
+            画布只放得下 {{ capInfo.drawn }} / {{ capInfo.total }} 个知识点（其余按章号与度数排在后面未绘制），
+            请点上面的章节或调低"每章上限"。
+          </span>
+        </div>
         <path-graph v-if="nodes.length" :nodes="nodes" :edges="edges"
                     :plan-ids="planIds" :mode="mode"
                     :selected-id="selected && selected.node ? selected.node.kp_id : ''"
-                    @node-click="onNodeClick"></path-graph>
+                    @cap="onCap" @node-click="onNodeClick"></path-graph>
         <div class="empty" v-else-if="loading" style="padding: 80px 16px;"><p>路径加载中…</p></div>
         <div class="empty" v-else style="padding: 80px 16px;">
           <p>{{ loaded ? '该范围内没有已归章的知识点' : '尚未物化知识点' }}</p>
