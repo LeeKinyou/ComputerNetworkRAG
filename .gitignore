@@ -1,0 +1,23 @@
+# Local credentials
+.env
+.env.*
+!.env.example
+
+# Local runtime and generated files
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.log
+data/
+runtime/
+
+# Frontend build output
+node_modules/
+dist/
+coverage/
+
+# Existing local reference directory
+/b4809-main/
