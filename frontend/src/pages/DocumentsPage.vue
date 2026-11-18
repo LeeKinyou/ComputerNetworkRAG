@@ -52,6 +52,7 @@ const chapters = ref<{ id: string; title: string }[]>([])
 const selectedId = ref('')
 const chunkList = ref<{ id: string; text: string; topic: string; score: number }[]>([])
 const uploading = ref(false)
+const deleting = ref(false)
 const loading = ref(true)
 const notice = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -194,6 +195,24 @@ const totalChunks = computed(() => docList.value.reduce((sum, doc) => sum + doc.
 const chapterCount = computed(
   () => new Set(docList.value.map((doc) => doc.chapter).filter((item) => item !== '未挂章节')).size,
 )
+
+async function removeSelected() {
+  const doc = selected.value
+  if (!doc.id || doc.id.startsWith('doc_seed')) return
+  if (!window.confirm(`删除《${doc.title}》？该文档的分块与索引会一并移除。`)) return
+  deleting.value = true
+  notice.value = ''
+  try {
+    await api.del(`/documents/${doc.id}`)
+    await loadDocs()
+    await loadChunks()
+    notice.value = `${doc.title} 已移出知识库`
+  } catch (error) {
+    notice.value = error instanceof ApiError ? error.message : '删除失败'
+  } finally {
+    deleting.value = false
+  }
+}
 
 watch(selectedId, () => {
   void loadChunks()
@@ -381,6 +400,14 @@ onMounted(() => {
           >
             <RefreshCw :size="12" />
             重新读取该文档切片
+          </button>
+          <button
+            v-if="selected.id && !selected.id.startsWith('doc_seed')"
+            class="pill-btn mt-2 h-8 w-full justify-center border border-line bg-tint-soft text-[10.5px] text-[#E36A6A] hover:border-[#E36A6A]/40 disabled:opacity-50"
+            :disabled="deleting"
+            @click="removeSelected"
+          >
+            {{ deleting ? '正在删除…' : '删除这份文档' }}
           </button>
         </div>
       </section>
