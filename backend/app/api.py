@@ -1,0 +1,440 @@
+"""HTTP 接口：课程、图谱、文档、检索、会话与运行事件。前缀 /api/v2。"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.agent import TERMINAL, emit, execute_run, start_run
+from app.config import settings
+from app.db import get_session
+from app.ingest import IngestError, ingest_document
+from app.models import Chapter, ChatSession, Chunk, Concept, ConceptEdge, Course, Document, Message, Run, RunStep
+from app.retrieval import retriever
+from app.seed import COURSE_ID
+from app.tools import get_concept
+from app.util import iso, new_id
+
+router = APIRouter(prefix="/api/v2")
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+
+class RunCreate(BaseModel):
+    message: str = Field(min_length=1, max_length=8000)
+    mode: str = "course_qa"
+
+
+class RunInput(BaseModel):
+    input_id: str
+    approved: bool
+
+
+class SessionCreate(BaseModel):
+    course_id: str = COURSE_ID
+    title: str | None = None
+
+
+class SearchRequest(BaseModel):
+    course_id: str = COURSE_ID
+    query: str = Field(min_length=1, max_length=2000)
+    top_k: int = Field(default=5, ge=1, le=20)
+
+
+def _fail(status: int, code: str, message: str) -> HTTPException:
+    return HTTPException(status_code=status, detail={"code": code, "message": message})
+
+
+@router.get("/health")
+async def health() -> dict:
+    return {
+        "status": "ok",
+        "db_backend": settings.db_backend,
+        "llm_ready": settings.llm_ready,
+        "retriever_ready": retriever.ready,
+    }
+
+
+@router.get("/meta")
+async def meta(session: SessionDep) -> dict:
+    course = await session.get(Course, COURSE_ID)
+    concept_count = await session.scalar(select(func.count(Concept.id)))
+    document_count = await session.scalar(select(func.count(Document.id)))
+    chunk_count = await session.scalar(select(func.count(Chunk.id)))
+    return {
+        "course": {"id": course.id, "title": course.title} if course else None,
+        "counts": {
+            "concepts": concept_count or 0,
+            "documents": document_count or 0,
+            "chunks": chunk_count or 0,
+        },
+        "llm_ready": settings.llm_ready,
+        "llm_model": settings.llm_model,
+        "demo_questions": [
+            "计算 192.168.10.137/27 的网络地址和可用主机数",
+            "同一局域网内 ARP 是怎么工作的？",
+            "把上面的前缀换成 /28 再算一次",
+            "为什么要用 CIDR 做路由聚合？",
+        ],
+    }
+
+
+@router.get("/courses")
+async def list_courses(session: SessionDep) -> dict:
+    courses = (await session.execute(select(Course))).scalars().all()
+    return {
+        "items": [
+            {"id": c.id, "title": c.title, "description": c.description, "status": c.status}
+            for c in courses
+        ],
+        "next_cursor": None,
+    }
+
+
+@router.get("/courses/{course_id}/chapters")
+async def list_chapters(course_id: str, session: SessionDep) -> dict:
+    chapters = (
+        await session.execute(select(Chapter).where(Chapter.course_id == course_id))
+    ).scalars().all()
+    return {
+        "items": [
+            {"id": c.id, "parent_id": c.parent_id, "title": c.title, "sort_order": c.sort_order}
+            for c in chapters
+        ]
+    }
+
+
+@router.get("/courses/{course_id}/concepts")
+async def list_concepts(course_id: str, session: SessionDep) -> dict:
+    concepts = (
+        await session.execute(select(Concept).where(Concept.course_id == course_id))
+    ).scalars().all()
+    return {
+        "items": [
+            {
+                "id": c.id,
+                "chapter_id": c.chapter_id,
+                "code": c.code,
+                "title": c.title,
+                "description": c.description,
+            }
+            for c in concepts
+        ],
+        "next_cursor": None,
+    }
+
+
+@router.get("/courses/{course_id}/graph")
+async def course_graph(course_id: str, session: SessionDep) -> dict:
+    chapters = (
+        await session.execute(
+            select(Chapter).where(Chapter.course_id == course_id).order_by(Chapter.sort_order)
+        )
+    ).scalars().all()
+    chapter_order = {chapter.id: index for index, chapter in enumerate(chapters)}
+    concepts = (
+        await session.execute(select(Concept).where(Concept.course_id == course_id))
+    ).scalars().all()
+    edges = (
+        await session.execute(select(ConceptEdge).where(ConceptEdge.course_id == course_id))
+    ).scalars().all()
+    return {
+        "nodes": [
+            {
+                "id": c.id,
+                "name": c.title,
+                "category": chapter_order.get(c.chapter_id or "", 0),
+                "desc": c.description,
+                "chapter_id": c.chapter_id,
+            }
+            for c in concepts
+        ],
+        "links": [
+            {"source": e.source_id, "target": e.target_id, "kind": e.kind} for e in edges
+        ],
+        "chapters": [{"id": c.id, "title": c.title} for c in chapters],
+    }
+
+
+@router.get("/concepts/{concept_id}")
+async def concept_detail(concept_id: str, session: SessionDep) -> dict:
+    result = await get_concept(session, concept_id)
+    if result.status != "ok":
+        raise _fail(404, "NOT_FOUND", "知识点不存在")
+    related = retriever.search(result.data["title"], top_k=2)
+    return {**result.data, "sources": related}
+
+
+@router.get("/courses/{course_id}/documents")
+async def list_documents(course_id: str, session: SessionDep) -> dict:
+    documents = (
+        await session.execute(
+            select(Document).where(Document.course_id == course_id).order_by(Document.created_at.desc())
+        )
+    ).scalars().all()
+    return {
+        "items": [
+            {
+                "id": d.id,
+                "title": d.title,
+                "filename": d.filename,
+                "mime": d.mime,
+                "size": d.size,
+                "status": d.status,
+                "chunk_count": d.chunk_count,
+                "chapter_id": d.chapter_id,
+                "created_at": iso(d.created_at),
+            }
+            for d in documents
+        ],
+        "next_cursor": None,
+    }
+
+
+@router.post("/courses/{course_id}/documents", status_code=201)
+async def upload_document(
+    course_id: str,
+    session: SessionDep,
+    file: Annotated[UploadFile, File()],
+    title: Annotated[str, Form()] = "",
+    chapter_id: Annotated[str | None, Form()] = None,
+) -> dict:
+    if course_id != COURSE_ID:
+        raise _fail(404, "NOT_FOUND", "课程不存在")
+    data = await file.read()
+    try:
+        document = await ingest_document(
+            session,
+            course_id=course_id,
+            chapter_id=chapter_id or None,
+            title=title.strip(),
+            filename=file.filename or "upload.txt",
+            data=data,
+            max_bytes=settings.max_upload_bytes,
+        )
+    except IngestError as exc:
+        raise _fail(422, exc.code, exc.message) from exc
+    await retriever.refresh(session)
+    return {
+        "id": document.id,
+        "title": document.title,
+        "status": document.status,
+        "chunk_count": document.chunk_count,
+    }
+
+
+@router.delete("/documents/{document_id}", status_code=204)
+async def delete_document(document_id: str, session: SessionDep) -> Response:
+    document = await session.get(Document, document_id)
+    if document is None or document.id.startswith("doc_seed"):
+        raise _fail(403, "FORBIDDEN", "预置文档不可删除")
+    await session.delete(document)
+    await session.commit()
+    await retriever.refresh(session)
+    return Response(status_code=204)
+
+
+@router.get("/documents/{document_id}/chunks")
+async def document_chunks(document_id: str, session: SessionDep, limit: int = Query(default=20, le=100)) -> dict:
+    chunks = (
+        await session.execute(
+            select(Chunk).where(Chunk.document_id == document_id).order_by(Chunk.ordinal).limit(limit)
+        )
+    ).scalars().all()
+    return {
+        "items": [
+            {
+                "chunk_id": c.id,
+                "section_path": c.section_path,
+                "page": c.page,
+                "text": c.text,
+            }
+            for c in chunks
+        ]
+    }
+
+
+@router.post("/search")
+async def search(payload: SearchRequest, session: SessionDep) -> dict:
+    if not retriever.ready:
+        await retriever.refresh(session)
+    results = retriever.search(payload.query, top_k=payload.top_k)
+    return {"items": results, "total": len(results)}
+
+
+@router.get("/sources/{chunk_id}")
+async def source_detail(chunk_id: str) -> dict:
+    detail = retriever.read_source(chunk_id, neighbor_count=1)
+    if detail is None:
+        raise _fail(404, "NOT_FOUND", "片段不存在或索引未就绪")
+    return detail
+
+
+@router.post("/chat-sessions", status_code=201)
+async def create_session(payload: SessionCreate, session: SessionDep) -> dict:
+    chat = ChatSession(
+        id=new_id(),
+        course_id=payload.course_id,
+        title=payload.title or "新会话",
+    )
+    session.add(chat)
+    await session.commit()
+    return {"id": chat.id, "course_id": chat.course_id, "title": chat.title}
+
+
+@router.get("/chat-sessions")
+async def list_sessions(session: SessionDep, course_id: str | None = None) -> dict:
+    query = select(ChatSession).order_by(ChatSession.created_at.desc())
+    if course_id:
+        query = query.where(ChatSession.course_id == course_id)
+    sessions = (await session.execute(query)).scalars().all()
+    return {
+        "items": [{"id": s.id, "course_id": s.course_id, "title": s.title} for s in sessions]
+    }
+
+
+@router.get("/chat-sessions/{session_id}/messages")
+async def list_messages(session_id: str, session: SessionDep) -> dict:
+    messages = (
+        await session.execute(
+            select(Message).where(Message.session_id == session_id).order_by(Message.created_at)
+        )
+    ).scalars().all()
+    return {
+        "items": [
+            {"id": m.id, "role": m.role, "content": m.content, "created_at": iso(m.created_at)}
+            for m in messages
+        ]
+    }
+
+
+@router.post("/chat-sessions/{session_id}/runs", status_code=202)
+async def create_run(session_id: str, payload: RunCreate, session: SessionDep) -> dict:
+    chat = await session.get(ChatSession, session_id)
+    if chat is None:
+        raise _fail(404, "NOT_FOUND", "会话不存在")
+    run = Run(
+        id=new_id(),
+        session_id=session_id,
+        course_id=chat.course_id,
+        mode=payload.mode,
+        question=payload.message,
+        status="queued",
+    )
+    session.add(run)
+    session.add(Message(id=new_id(), session_id=session_id, role="user", content=payload.message))
+    await session.commit()
+
+    await emit(run.id, "run.queued", {"status": "queued"})
+    await start_run(run.id)
+    return {
+        "run_id": run.id,
+        "session_id": session_id,
+        "status": "queued",
+        "events_url": f"/api/v2/runs/{run.id}/events",
+    }
+
+
+@router.get("/runs/{run_id}")
+async def get_run(run_id: str, session: SessionDep) -> dict:
+    run = await session.get(Run, run_id)
+    if run is None:
+        raise _fail(404, "NOT_FOUND", "运行不存在")
+    return {
+        "run_id": run.id,
+        "session_id": run.session_id,
+        "status": run.status,
+        "question": run.question,
+        "answer_markdown": run.answer_markdown,
+        "citations": run.citations or [],
+        "cards": run.cards or [],
+        "pending_input": run.pending_input,
+        "error_code": run.error_code,
+        "latest_seq": run.latest_seq,
+        "created_at": iso(run.created_at),
+    }
+
+
+@router.get("/runs/{run_id}/events")
+async def run_events(run_id: str, after_seq: int = 0) -> StreamingResponse:
+    async def stream():
+        cursor = after_seq
+        idle_ticks = 0
+        while True:
+            rows = []
+            terminal = False
+            async with AsyncSessionLocal() as session:
+                run = await session.get(Run, run_id)
+                if run is None:
+                    yield "event: error\ndata: {\"code\":\"NOT_FOUND\"}\n\n"
+                    return
+                rows = (
+                    await session.execute(
+                        select(RunStep)
+                        .where(RunStep.run_id == run_id, RunStep.seq > cursor)
+                        .order_by(RunStep.seq)
+                        .limit(200)
+                    )
+                ).scalars().all()
+                terminal = run.status in TERMINAL
+            if rows:
+                idle_ticks = 0
+                for step in rows:
+                    cursor = step.seq
+                    yield (
+                        f"id: {step.seq}\n"
+                        f"event: {step.type}\n"
+                        f"data: {json.dumps(step.payload, ensure_ascii=False)}\n\n"
+                    )
+                continue
+            if terminal:
+                idle_ticks += 1
+                if idle_ticks > 4:
+                    return
+            if idle_ticks % 100 == 0 and idle_ticks:
+                yield ": heartbeat\n\n"
+            await asyncio.sleep(0.15)
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/runs/{run_id}/inputs", status_code=202)
+async def submit_input(run_id: str, payload: RunInput, session: SessionDep) -> dict:
+    run = await session.get(Run, run_id)
+    if run is None:
+        raise _fail(404, "NOT_FOUND", "运行不存在")
+    pending = run.pending_input or {}
+    if run.status != "waiting_user" or pending.get("input_id") != payload.input_id:
+        raise _fail(409, "RUN_NOT_WAITING", "当前运行不在等待审批状态")
+    run.pending_input = None
+    run.status = "running"
+    await session.commit()
+    await execute_run(run_id, resume={"approved": payload.approved})
+    return {"run_id": run_id, "status": "running"}
+
+
+@router.post("/runs/{run_id}/cancel")
+async def cancel_run(run_id: str, session: SessionDep) -> dict:
+    run = await session.get(Run, run_id)
+    if run is None:
+        raise _fail(404, "NOT_FOUND", "运行不存在")
+    if run.status in TERMINAL:
+        return {"run_id": run.id, "status": run.status, "cancel_requested": False}
+    run.status = "cancelled"
+    run.pending_input = None
+    await session.commit()
+    await emit(run_id, "run.cancelled", {"status": "cancelled"})
+    return {"run_id": run.id, "status": "cancelled", "cancel_requested": True}
+
+
+from app.db import SessionFactory as AsyncSessionLocal  # noqa: E402
