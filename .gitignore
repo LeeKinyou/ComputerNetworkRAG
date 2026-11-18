@@ -18,6 +18,8 @@ runtime/
 node_modules/
 dist/
 coverage/
+frontend/shots/
+backend/app/static/
 
 # Existing local reference directory
 /b4809-main/
