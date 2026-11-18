@@ -52,6 +52,14 @@ uv run python -m app.main
 | POST | `/api/v2/runs/{id}/inputs` | 审批结果，恢复被中断的运行 |
 | GET | `/api/v2/analytics/overview` | 课程使用统计：提问量、完成率、章节关注度、高频问题 |
 
+## 测试
+
+```bash
+uv run pytest -q
+```
+
+当前覆盖确定性逻辑：子网计算的前缀边界与地址策略、文档解析分块的长度与重叠、双模式的任务计划分流。测试不依赖网络、模型 Key 或运行时数据库。
+
 ## 演示前重置
 
 停掉服务后，在 `backend` 目录执行：
