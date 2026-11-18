@@ -1,0 +1,142 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-canvas: #f5f6f8;
+  --color-shell: #f0f1f4;
+  --color-surface: #ffffff;
+  --color-ink: #111318;
+  --color-subink: #3f4450;
+  --color-muted: #767b88;
+  --color-line: #e7e8ee;
+  --color-line-strong: #d6d9e1;
+  --color-brand: #2f6bff;
+  --color-brand-soft: #eaf1ff;
+  --color-tint: rgba(17, 19, 24, 0.04);
+  --color-tint-soft: rgba(17, 19, 24, 0.02);
+  --color-tint-strong: rgba(17, 19, 24, 0.07);
+  --color-success: #16a34a;
+  --color-warn: #d97706;
+  --color-danger: #dc2626;
+
+  --radius-card: 18px;
+
+  --font-sans: "Inter", "SF Pro Text", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+}
+
+.dark {
+  --color-canvas: #0a0b0e;
+  --color-shell: #070809;
+  --color-surface: #131519;
+  --color-ink: #f2f3f5;
+  --color-subink: #c6cad2;
+  --color-muted: #8a8f9c;
+  --color-line: #23252b;
+  --color-line-strong: #34373f;
+  --color-brand: #6a97ff;
+  --color-brand-soft: #17233d;
+  --color-tint: rgba(255, 255, 255, 0.05);
+  --color-tint-soft: rgba(255, 255, 255, 0.03);
+  --color-tint-strong: rgba(255, 255, 255, 0.09);
+  --color-success: #3ecf8e;
+  --color-warn: #e5a44c;
+  --color-danger: #f0736f;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+* {
+  border-color: var(--color-line);
+}
+
+::selection {
+  background: #dbe6ff;
+  color: #111318;
+}
+
+.dark ::selection {
+  background: #2a3550;
+  color: #f2f3f5;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-line-strong);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@layer components {
+  .surface {
+    @apply rounded-[18px] border border-line bg-surface;
+    box-shadow:
+      0 1px 2px rgba(16, 24, 40, 0.03),
+      0 10px 24px -22px rgba(16, 24, 40, 0.14);
+  }
+  .dark .surface {
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.35),
+      0 12px 28px -24px rgba(0, 0, 0, 0.7);
+  }
+  .surface-flat {
+    @apply rounded-[18px] border border-line bg-surface;
+  }
+  .icon-btn {
+    @apply inline-flex h-8 w-8 items-center justify-center rounded-full text-muted transition-all duration-200 hover:bg-tint hover:text-ink active:scale-95;
+  }
+  .pill-btn {
+    @apply inline-flex items-center gap-1.5 rounded-full px-4 text-[12.5px] font-medium transition-all duration-200 active:scale-[0.98];
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes soft-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-soft-pulse {
+  animation: soft-pulse 1.4s ease-in-out infinite;
+}
