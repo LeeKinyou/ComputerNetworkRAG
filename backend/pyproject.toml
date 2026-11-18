@@ -23,6 +23,7 @@ dependencies = [
     "redis>=8.1.0",
     "sqlalchemy[asyncio]>=2.1.9",
     "sse-starlette>=3.7.0",
+    "starlette>=0.46,<1.0",
     "uvicorn[standard]>=0.54.0",
 ]
 
