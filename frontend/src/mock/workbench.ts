@@ -1,4 +1,4 @@
-export type TaskStatus = 'running' | 'waiting_approval' | 'done'
+export type TaskStatus = 'running' | 'waiting_approval' | 'done' | 'failed'
 export type TaskMode = 'rag' | 'agent'
 export type Mastery = 'mastered' | 'weak' | 'new'
 export type ArtifactKind = 'calc' | 'answer' | 'table' | 'note' | 'quiz' | 'graph'
@@ -37,6 +37,24 @@ export interface SourceRef {
   text: string
 }
 
+export interface PendingApproval {
+  input_id: string
+  kind: string
+  prompt: string
+  tool_call_id?: string
+}
+
+export interface CalcCard {
+  ip: string
+  prefix: number
+  network_address: string
+  broadcast_address: string
+  first_host: string
+  last_host: string
+  usable_host_count: number
+  block_size: number
+}
+
 export interface Task {
   id: string
   title: string
@@ -52,6 +70,11 @@ export interface Task {
   artifacts: Artifact[]
   sources: SourceRef[]
   answer?: string
+  streaming?: string
+  calc?: CalcCard
+  pending?: PendingApproval | null
+  lastSeq?: number
+  demo?: boolean
 }
 
 export interface TodayTask {
