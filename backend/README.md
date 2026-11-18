@@ -45,6 +45,9 @@ uv run python -m app.main
 | POST | `/api/v2/search` | BM25 + 向量 + RRF 检索 |
 | GET | `/api/v2/sources/{chunk_id}` | 引用片段与相邻原文 |
 | POST | `/api/v2/chat-sessions/{id}/runs` | 创建一次问答运行（202） |
+| GET | `/api/v2/chat-sessions` | 会话列表，含每个会话最近一次运行 |
+| GET | `/api/v2/runs/{id}` | 运行详情：答案、引用、卡片、待审批输入 |
+| GET | `/api/v2/runs/{id}/steps` | 运行事件回放（前端恢复历史任务） |
 | GET | `/api/v2/runs/{id}/events` | SSE：计划、工具调用、观察、token、审批、终态 |
 | POST | `/api/v2/runs/{id}/inputs` | 审批结果，恢复被中断的运行 |
 
@@ -59,6 +62,10 @@ uv run python -m app.main
 `app/agent.py` 用 LangGraph `StateGraph`：分析 → 检索 → 计算 → 审批 → 组织 → 落库。
 写操作（如「重建第 4 章索引」）会进入 `waiting_user`，`interrupt()` 挂起；前端提交
 `POST /runs/{id}/inputs` 后以 `Command(resume=...)` 继续。审批参数带 `args_hash`，客户端不能改写。
+
+检查点由 `AsyncSqliteSaver` 落在 `CHECKPOINT_SQLITE_PATH`（默认 `runtime/checkpoints.db`），
+进程重启后仍可恢复 `waiting_user` 的运行；应用启动时在 lifespan 中注入，测试脚本单独导入
+`app.agent` 时回落到内存存储。
 
 ## 目录
 
@@ -79,6 +86,5 @@ app/
 ## 已知约束
 
 - `starlette` 锁定 `<1.0`：当前 FastAPI 版本与 Starlette 1.x 的 `include_router` 不兼容，会导致路由不生效。
-- 检查点保存在进程内（`InMemorySaver`），重启后未完成的审批运行需要重新发起；
 - lite 档只适合单用户演示，`WORKER_CONCURRENCY` 固定为 1；
 - 预置文档不可删除，上传文档可删。
