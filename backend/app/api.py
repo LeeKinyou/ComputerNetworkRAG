@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections import Counter
+from datetime import timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
@@ -20,7 +22,7 @@ from app.models import Chapter, ChatSession, Chunk, Concept, ConceptEdge, Course
 from app.retrieval import retriever
 from app.seed import COURSE_ID
 from app.tools import get_concept
-from app.util import iso, new_id
+from app.util import iso, new_id, utcnow
 
 router = APIRouter(prefix="/api/v2")
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -308,6 +310,7 @@ async def list_sessions(session: SessionDep, course_id: str | None = None) -> di
                     "run_id": last_run.id,
                     "question": last_run.question,
                     "status": last_run.status,
+                    "mode": last_run.mode,
                     "created_at": iso(last_run.created_at),
                 }
                 if last_run
@@ -466,6 +469,90 @@ async def cancel_run(run_id: str, session: SessionDep) -> dict:
     await session.commit()
     await emit(run_id, "run.cancelled", {"status": "cancelled"})
     return {"run_id": run.id, "status": "cancelled", "cancel_requested": True}
+
+
+@router.get("/analytics/overview")
+async def analytics_overview(session: SessionDep, course_id: str = COURSE_ID) -> dict:
+    """课程使用统计：真实 run 记录聚合，供学习报告与教师学情页使用。"""
+    runs = (await session.execute(select(Run).where(Run.course_id == course_id))).scalars().all()
+    run_ids = [run.id for run in runs]
+    tool_calls = 0
+    if run_ids:
+        tool_calls = int(
+            await session.scalar(
+                select(func.count())
+                .select_from(RunStep)
+                .where(RunStep.run_id.in_(run_ids), RunStep.type == "action")
+            )
+            or 0
+        )
+    today = utcnow().date()
+    week = [run for run in runs if run.created_at and (today - run.created_at.date()).days < 7]
+    month = [run for run in runs if run.created_at and (today - run.created_at.date()).days < 30]
+
+    daily = [
+        {
+            "date": (today - timedelta(days=offset)).isoformat(),
+            "count": sum(
+                1 for run in runs if run.created_at and run.created_at.date() == today - timedelta(days=offset)
+            ),
+        }
+        for offset in range(13, -1, -1)
+    ]
+
+    question_counts = Counter(run.question.strip() for run in runs if run.question.strip())
+    hot_questions = [
+        {"question": text, "count": count} for text, count in question_counts.most_common(6)
+    ]
+
+    chapters = (
+        await session.execute(
+            select(Chapter).where(Chapter.course_id == course_id).order_by(Chapter.sort_order)
+        )
+    ).scalars().all()
+    documents = (
+        await session.execute(select(Document).where(Document.course_id == course_id))
+    ).scalars().all()
+    chapter_of_doc = {doc.title: doc.chapter_id for doc in documents}
+    chapter_hits: Counter[str] = Counter()
+    doc_hits: Counter[str] = Counter()
+    for run in runs:
+        for citation in run.citations or []:
+            title = str(citation.get("title") or "")
+            doc_hits[title] += 1
+            chapter_id = chapter_of_doc.get(title)
+            if chapter_id:
+                chapter_hits[chapter_id] += 1
+    total_hits = sum(chapter_hits.values()) or 1
+    chapter_focus = [
+        {"label": chapter.title, "value": round(chapter_hits[chapter.id] * 100 / total_hits)}
+        for chapter in chapters
+    ]
+
+    return {
+        "questions": len(runs),
+        "questions_week": len(week),
+        "questions_month": len(month),
+        "pending_approvals": sum(1 for run in runs if run.status == "waiting_user"),
+        "tool_calls": tool_calls,
+        "completion_rate": (
+            round(sum(1 for run in runs if run.status == "completed") * 100 / len(runs)) if runs else 0
+        ),
+        "mode_split": {
+            "rag": sum(1 for run in runs if run.mode == "rag"),
+            "agent": sum(1 for run in runs if run.mode != "rag"),
+        },
+        "daily": daily,
+        "hot_questions": hot_questions,
+        "chapter_focus": chapter_focus,
+        "top_documents": [
+            {"title": title, "count": count} for title, count in doc_hits.most_common(4)
+        ],
+        "documents": {
+            "count": len(documents),
+            "chunks": sum(doc.chunk_count for doc in documents),
+        },
+    }
 
 
 from app.db import SessionFactory as AsyncSessionLocal  # noqa: E402
