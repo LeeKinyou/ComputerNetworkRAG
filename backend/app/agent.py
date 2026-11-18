@@ -78,30 +78,37 @@ async def _set_status(run_id: str, status: str, **fields: Any) -> None:
             setattr(run, key, value)
 
 
-def _plan(question: str, needs_approval: bool) -> list[dict]:
+def _plan(question: str, needs_approval: bool, mode: str = "agent") -> list[dict]:
     steps = [
         {"key": "understand", "goal": "理解问题并确定需要的课程范围"},
         {"key": "retrieve", "goal": "检索课程文档中的相关片段"},
     ]
-    if IP_RE.search(question):
-        steps.append({"key": "calculate", "goal": "按前缀计算网络地址、广播地址与可用主机数"})
-    if needs_approval:
-        steps.append({"key": "approval", "goal": "写操作需要人工确认后执行"})
+    if mode != "rag":
+        if IP_RE.search(question):
+            steps.append({"key": "calculate", "goal": "按前缀计算网络地址、广播地址与可用主机数"})
+        if needs_approval:
+            steps.append({"key": "approval", "goal": "写操作需要人工确认后执行"})
     steps.append({"key": "compose", "goal": "组织回答并标注引用来源"})
     return steps
 
 
 async def analyze_node(state: TutorState) -> dict:
     question = state["question"]
+    mode = "rag" if str(state.get("mode") or "") == "rag" else "agent"
     needs_approval = bool(WRITE_INTENT_RE.search(question))
-    plan = _plan(question, needs_approval)
+    plan = _plan(question, needs_approval, mode)
     await emit(
         state["run_id"],
         "step_start",
         {
             "step": "analyze",
             "title": "理解问题",
-            "detail": f"识别到 {len(plan)} 个步骤" + ("，包含写操作" if needs_approval else ""),
+            "detail": (
+                f"检索增强模式：{len(plan)} 个步骤"
+                if mode == "rag"
+                else f"智能体模式：识别到 {len(plan)} 个步骤"
+                + ("，包含写操作" if needs_approval else "")
+            ),
         },
     )
     await emit(
@@ -332,7 +339,11 @@ def build_graph(checkpointer: Any | None = None):
 
     builder.add_edge(START, "analyze")
     builder.add_edge("analyze", "retrieve")
-    builder.add_edge("retrieve", "calculate")
+    builder.add_conditional_edges(
+        "retrieve",
+        lambda state: "compose" if str(state.get("mode") or "") == "rag" else "calculate",
+        {"calculate": "calculate", "compose": "compose"},
+    )
     builder.add_edge("calculate", "approval")
     builder.add_edge("approval", "compose")
     builder.add_edge("compose", "finalize")
