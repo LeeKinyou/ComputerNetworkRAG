@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
   ArrowUpRight,
   BarChart3,
@@ -9,10 +9,38 @@ import {
   Sparkles,
   Target,
 } from 'lucide-vue-next'
+import { api } from '@/api/client'
+import type { AnalyticsOverview } from '@/api/client'
 import { insights } from '@/mock/workbench'
 
 const range = ref<'week' | 'month'>('week')
 const toast = ref('')
+const stats = ref<AnalyticsOverview | null>(null)
+
+onMounted(async () => {
+  try {
+    stats.value = await api.get<AnalyticsOverview>('/analytics/overview')
+  } catch {
+    stats.value = null
+  }
+})
+
+const weeklyQuestions = computed(() => stats.value?.questions_week ?? insights.weeklyQuestions)
+const modeLine = computed(() => {
+  const split = stats.value?.mode_split
+  if (!split) return '较上周 +18%，网络层占 46%'
+  return `智能体 ${split.agent} 次 · 快速检索 ${split.rag} 次 · 完成率 ${stats.value?.completion_rate ?? 0}%`
+})
+const hotQuestion = computed(() => stats.value?.hot_questions[0]?.question ?? insights.highFrequency[0].q)
+const hotCount = computed(() => stats.value?.hot_questions[0]?.count ?? insights.highFrequency[0].count)
+const chapterRows = computed(() =>
+  stats.value?.chapter_focus?.length ? stats.value.chapter_focus : insights.chapterMastery,
+)
+const hotList = computed(() =>
+  stats.value?.hot_questions?.length
+    ? stats.value.hot_questions.map((item) => ({ q: item.question, count: item.count }))
+    : insights.highFrequency,
+)
 
 function act(text: string) {
   toast.value = text
@@ -61,11 +89,11 @@ function act(text: string) {
         </div>
         <div class="mt-2 flex items-end gap-2">
           <span class="text-[28px] font-semibold leading-none tracking-[-0.03em]">
-            {{ insights.weeklyQuestions }}
+            {{ weeklyQuestions }}
           </span>
-          <span class="mb-0.5 text-[11px] text-muted">次提问 · {{ insights.students }} 人</span>
+          <span class="mb-0.5 text-[11px] text-muted">次提问 · 本周</span>
         </div>
-        <p class="mt-2 text-[9.5px] text-muted">较上周 +18%，网络层占 46%</p>
+        <p class="mt-2 text-[9.5px] text-muted">{{ modeLine }}</p>
       </div>
       <div class="px-5 py-4">
         <div class="flex items-center gap-1.5 text-[10px] text-muted">
@@ -73,9 +101,9 @@ function act(text: string) {
           最热问题
         </div>
         <p class="mt-2 line-clamp-1 text-[12.5px] font-medium text-ink">
-          {{ insights.highFrequency[0].q }}
+          {{ hotQuestion }}
         </p>
-        <p class="mt-2 text-[9.5px] text-muted">{{ insights.highFrequency[0].count }} 人问过，建议课上统一讲</p>
+        <p class="mt-2 text-[9.5px] text-muted">{{ hotCount }} 次被问到，建议课上统一讲</p>
       </div>
       <div class="px-5 py-4">
         <div class="flex items-center gap-1.5 text-[10px] text-muted">
@@ -93,16 +121,16 @@ function act(text: string) {
           <header class="flex items-center justify-between border-b border-line px-5 py-3.5">
             <div class="flex items-center gap-2">
               <Target :size="14" class="text-muted" />
-              <h2 class="text-[12.5px] font-medium">章节掌握</h2>
+              <h2 class="text-[12.5px] font-medium">章节关注度</h2>
             </div>
-            <span class="text-[9.5px] text-muted">班级平均 · 满分 100</span>
+            <span class="text-[9.5px] text-muted">按引用命中的章节统计</span>
           </header>
           <div class="flex flex-col gap-3.5 p-5">
-            <div v-for="c in insights.chapterMastery" :key="c.label">
+            <div v-for="c in chapterRows" :key="c.label">
               <div class="flex items-center justify-between text-[11px]">
                 <span class="text-subink">{{ c.label }}</span>
                 <span class="font-mono text-[10px]" :class="c.value < 55 ? 'text-warn' : 'text-muted'">
-                  {{ c.value }}
+                  {{ c.value }}%
                 </span>
               </div>
               <div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-tint">
@@ -122,17 +150,17 @@ function act(text: string) {
               <MessageSquareText :size="14" class="text-muted" />
               <h2 class="text-[12.5px] font-medium">高频问题</h2>
             </div>
-            <span class="text-[9.5px] text-muted">按提问人数排序</span>
+            <span class="text-[9.5px] text-muted">按提问次数排序</span>
           </header>
           <ul class="p-2">
             <li
-              v-for="(q, i) in insights.highFrequency"
+              v-for="(q, i) in hotList"
               :key="q.q"
               class="flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-tint-soft"
             >
               <span class="w-4 shrink-0 font-mono text-[10px] text-muted">{{ i + 1 }}</span>
               <p class="min-w-0 flex-1 truncate text-[11.5px] text-subink">{{ q.q }}</p>
-              <span class="shrink-0 text-[9.5px] text-muted">{{ q.count }} 人</span>
+              <span class="shrink-0 text-[9.5px] text-muted">{{ q.count }} 次</span>
               <button
                 class="shrink-0 rounded-full border border-line px-2 py-0.5 text-[9px] text-muted transition-colors hover:border-brand/40 hover:text-brand"
                 @click="act('已生成答疑卡')"

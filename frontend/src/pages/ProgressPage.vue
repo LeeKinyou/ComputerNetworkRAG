@@ -1,22 +1,37 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
   ArrowRight,
   BookOpen,
   Brain,
   CheckCheck,
   Clock3,
-  Flame,
   RefreshCw,
   Sparkles,
   Target,
   TrendingUp,
+  Wrench,
 } from 'lucide-vue-next'
 import { RouterLink } from 'vue-router'
+import { api } from '@/api/client'
+import type { AnalyticsOverview } from '@/api/client'
 import { masteryMap } from '@/mock/workbench'
 import { studentReport } from '@/mock/workbench'
 
 const range = ref<'week' | 'month'>('week')
+const stats = ref<AnalyticsOverview | null>(null)
+
+onMounted(async () => {
+  try {
+    stats.value = await api.get<AnalyticsOverview>('/analytics/overview')
+  } catch {
+    stats.value = null
+  }
+})
+
+const weeklyQuestions = computed(() => stats.value?.questions_week ?? studentReport.tasksDone)
+const completionRate = computed(() => stats.value?.completion_rate ?? 0)
+const toolCalls = computed(() => stats.value?.tool_calls ?? 0)
 
 const counts = computed(() => {
   const c = { mastered: 0, weak: 0, new: 0 }
@@ -27,9 +42,15 @@ const total = computed(() => counts.value.mastered + counts.value.weak + counts.
 
 const pct = (n: number) => Math.round((n / total.value) * 100)
 
-const maxDaily = computed(() => Math.max(...studentReport.daily.map((d) => d.minutes), 1))
+const weeklyDaily = computed(() => {
+  const rows = stats.value?.daily?.slice(-7) ?? []
+  if (!rows.length) return studentReport.daily.map((d) => ({ label: d.day, value: d.minutes }))
+  return rows.map((d) => ({ label: d.date.slice(5), value: d.count }))
+})
 
-const totalMinutes = computed(() => studentReport.daily.reduce((s, d) => s + d.minutes, 0))
+const maxDaily = computed(() => Math.max(...weeklyDaily.value.map((d) => d.value), 1))
+
+const totalMinutes = computed(() => weeklyDaily.value.reduce((s, d) => s + d.value, 0))
 </script>
 
 <template>
@@ -63,34 +84,34 @@ const totalMinutes = computed(() => studentReport.daily.reduce((s, d) => s + d.m
       <div class="px-5 py-4">
         <div class="flex items-center gap-1.5 text-[10px] text-muted">
           <Clock3 :size="11" />
-          学习时长
+          本周提问
         </div>
         <div class="mt-2 flex items-end gap-2">
-          <span class="text-[24px] font-semibold leading-none tracking-[-0.02em]">2h 45m</span>
+          <span class="text-[24px] font-semibold leading-none tracking-[-0.02em]">{{ weeklyQuestions }}</span>
           <span class="mb-0.5 flex items-center gap-0.5 text-[9.5px] text-success">
             <TrendingUp :size="10" />
-            {{ studentReport.weeklyDelta }}
+            {{ completionRate }}% 完成
           </span>
         </div>
       </div>
       <div class="px-5 py-4">
         <div class="flex items-center gap-1.5 text-[10px] text-muted">
           <CheckCheck :size="11" />
-          完成任务
+          完成率
         </div>
         <div class="mt-2 flex items-end gap-2">
-          <span class="text-[24px] font-semibold leading-none tracking-[-0.02em]">{{ studentReport.tasksDone }}</span>
-          <span class="mb-0.5 text-[9.5px] text-muted">本周</span>
+          <span class="text-[24px] font-semibold leading-none tracking-[-0.02em]">{{ completionRate }}%</span>
+          <span class="mb-0.5 text-[9.5px] text-muted">已完成运行</span>
         </div>
       </div>
       <div class="px-5 py-4">
         <div class="flex items-center gap-1.5 text-[10px] text-muted">
-          <Flame :size="11" />
-          连续学习
+          <Wrench :size="11" />
+          工具调用
         </div>
         <div class="mt-2 flex items-end gap-2">
-          <span class="text-[24px] font-semibold leading-none tracking-[-0.02em]">{{ studentReport.streak }}</span>
-          <span class="mb-0.5 text-[9.5px] text-muted">天 · 最长 12 天</span>
+          <span class="text-[24px] font-semibold leading-none tracking-[-0.02em]">{{ toolCalls }}</span>
+          <span class="mb-0.5 text-[9.5px] text-muted">次 · 检索与计算</span>
         </div>
       </div>
       <div class="px-5 py-4">
@@ -162,22 +183,22 @@ const totalMinutes = computed(() => studentReport.daily.reduce((s, d) => s + d.m
           <header class="flex items-center justify-between border-b border-line px-5 py-3.5">
             <div class="flex items-center gap-2">
               <TrendingUp :size="14" class="text-muted" />
-              <h2 class="text-[12.5px] font-medium">近 7 天</h2>
+              <h2 class="text-[12.5px] font-medium">近 7 天提问</h2>
             </div>
-            <span class="text-[9.5px] text-muted">共 {{ totalMinutes }} 分钟</span>
+            <span class="text-[9.5px] text-muted">共 {{ totalMinutes }} 次</span>
           </header>
           <div class="px-5 pb-4 pt-5">
             <div class="flex h-[96px] items-stretch gap-3">
-              <div v-for="d in studentReport.daily" :key="d.day" class="flex h-full flex-1 flex-col items-center gap-1.5">
-                <span class="font-mono text-[8.5px] text-muted">{{ d.minutes || '' }}</span>
+              <div v-for="d in weeklyDaily" :key="d.label" class="flex h-full flex-1 flex-col items-center gap-1.5">
+                <span class="font-mono text-[8.5px] text-muted">{{ d.value || '' }}</span>
                 <div class="flex w-full flex-1 items-end">
                   <div
                     class="w-full rounded-[5px] transition-[height]"
-                    :class="d.minutes === 0 ? 'bg-tint' : 'bg-brand/45'"
-                    :style="{ height: Math.max((d.minutes / maxDaily) * 100, d.minutes ? 8 : 3) + '%' }"
+                    :class="d.value === 0 ? 'bg-tint' : 'bg-brand/45'"
+                    :style="{ height: Math.max((d.value / maxDaily) * 100, d.value ? 8 : 3) + '%' }"
                   />
                 </div>
-                <span class="text-[9px] text-muted">{{ d.day }}</span>
+                <span class="text-[9px] text-muted">{{ d.label }}</span>
               </div>
             </div>
           </div>
