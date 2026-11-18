@@ -321,7 +321,7 @@ async def finalize_node(state: TutorState) -> dict:
     return {}
 
 
-def build_graph():
+def build_graph(checkpointer: Any | None = None):
     builder = StateGraph(TutorState)
     builder.add_node("analyze", analyze_node)
     builder.add_node("retrieve", retrieve_node)
@@ -337,10 +337,16 @@ def build_graph():
     builder.add_edge("approval", "compose")
     builder.add_edge("compose", "finalize")
     builder.add_edge("finalize", END)
-    return builder.compile(checkpointer=InMemorySaver())
+    return builder.compile(checkpointer=checkpointer or InMemorySaver())
 
 
 agent_graph = build_graph()
+
+
+def bind_checkpointer(checkpointer: Any) -> None:
+    """由应用 lifespan 注入持久化检查点，替代进程内存储。"""
+    global agent_graph
+    agent_graph = build_graph(checkpointer)
 
 
 async def execute_run(run_id: str, resume: dict | None = None) -> None:

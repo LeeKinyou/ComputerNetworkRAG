@@ -9,7 +9,9 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import HTTPException as FastAPIHTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
+from app import agent
 from app.api import router
 from app.config import STATIC_DIR, settings
 from app.db import SessionFactory, init_db, shutdown_db
@@ -29,8 +31,19 @@ async def lifespan(_: FastAPI):
     async with SessionFactory() as session:
         await retriever.refresh(session)
     logger.info("retriever ready: %s chunks", len(retriever._records))
-    yield
-    await shutdown_db()
+
+    checkpoint_path = settings.resolve_path(settings.checkpoint_sqlite_path)
+    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+    checkpoint_cm = AsyncSqliteSaver.from_conn_string(str(checkpoint_path))
+    checkpointer = await checkpoint_cm.__aenter__()
+    await checkpointer.setup()
+    agent.bind_checkpointer(checkpointer)
+    logger.info("checkpoint ready: %s", checkpoint_path)
+    try:
+        yield
+    finally:
+        await checkpoint_cm.__aexit__(None, None, None)
+        await shutdown_db()
 
 
 app = FastAPI(
