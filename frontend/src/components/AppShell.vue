@@ -8,6 +8,7 @@ import {
   HelpCircle,
   LayoutDashboard,
   Moon,
+  PenLine,
   Route,
   Search,
   Sparkles,
@@ -27,6 +28,7 @@ const navGroups = [
     items: [
       { to: '/', label: '工作台', icon: LayoutDashboard },
       { to: '/chat', label: '智能问答', icon: Bot },
+      { to: '/practice', label: '练习中心', icon: PenLine },
       { to: '/graph', label: '知识图谱', icon: Waypoints },
       { to: '/path', label: '学习计划', icon: Route },
       { to: '/documents', label: '知识库', icon: BookOpen },
@@ -43,6 +45,7 @@ const navGroups = [
 const labels: Record<string, string> = {
   overview: '工作台',
   chat: '智能问答',
+  practice: '练习中心',
   graph: '知识图谱',
   path: '学习计划',
   documents: '知识库',

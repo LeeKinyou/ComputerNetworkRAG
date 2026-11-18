@@ -30,6 +30,32 @@ export interface AnalyticsOverview {
   documents: { count: number; chunks: number }
 }
 
+export interface PracticeOption {
+  key: string
+  text: string
+}
+
+export interface PracticeQuestion {
+  id: string
+  chapter_id: string
+  chapter_title: string
+  concept_id: string | null
+  type: 'single' | 'judge'
+  stem: string
+  options: PracticeOption[]
+  difficulty: string
+}
+
+export interface AttemptResult {
+  attempt_id: string
+  correct: boolean
+  given: string
+  expected: string
+  explanation: string
+  source: string
+  stats: { total: number; correct: number; rate: number }
+}
+
 const BASE = '/api/v2'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
