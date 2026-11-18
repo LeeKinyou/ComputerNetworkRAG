@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import {
   ArrowRight,
   BookOpen,
@@ -11,22 +11,29 @@ import {
 } from 'lucide-vue-next'
 import { RouterLink } from 'vue-router'
 import GraphCanvas from '@/components/GraphCanvas.vue'
-import { categories, graphLinks, graphNodes } from '@/mock/data'
+import { categories as seedCategories, graphLinks as seedLinks, graphNodes as seedNodes } from '@/mock/data'
+import type { GraphLink, GraphNode } from '@/mock/data'
 import { masteryLabel, masteryMap } from '@/mock/workbench'
+import { api, type Evidence, type GraphDto } from '@/api/client'
 
+const COURSE_ID = 'course_cn'
+
+const nodes = ref<GraphNode[]>(seedNodes.map((node) => ({ ...node, refs: [] })))
+const links = ref<GraphLink[]>(seedLinks)
+const categories = ref<{ name: string }[]>(seedCategories)
 const selectedId = ref<string | null>('ipv4')
 const query = ref('')
 
-const selected = computed(() => graphNodes.find((n) => n.id === selectedId.value) ?? null)
+const selected = computed(() => nodes.value.find((node) => node.id === selectedId.value) ?? null)
 const categoryName = computed(() =>
-  selected.value ? categories[selected.value.category]?.name ?? '' : '',
+  selected.value ? categories.value[selected.value.category]?.name ?? '' : '',
 )
 const mastery = computed(() => (selected.value ? masteryMap[selected.value.id] ?? 'new' : 'new'))
 
 const counts = computed(() => {
-  const c = { mastered: 0, weak: 0, new: 0 }
-  for (const n of graphNodes) c[masteryMap[n.id] ?? 'new'] += 1
-  return c
+  const counter = { mastered: 0, weak: 0, new: 0 }
+  for (const node of nodes.value) counter[masteryMap[node.id] ?? 'new'] += 1
+  return counter
 })
 
 const masteryTone: Record<string, string> = {
@@ -37,25 +44,72 @@ const masteryTone: Record<string, string> = {
 
 const related = computed(() => {
   if (!selected.value) return []
-  return graphLinks
-    .filter((l) => l.source === selected.value!.id || l.target === selected.value!.id)
-    .map((l) => (l.source === selected.value!.id ? l.target : l.source))
+  return links.value
+    .filter((link) => link.source === selected.value!.id || link.target === selected.value!.id)
+    .map((link) => (link.source === selected.value!.id ? link.target : link.source))
     .slice(0, 6)
-    .map((id) => graphNodes.find((n) => n.id === id))
-    .filter(Boolean) as typeof graphNodes
+    .map((id) => nodes.value.find((node) => node.id === id))
+    .filter((node): node is GraphNode => Boolean(node))
 })
 
 function search() {
   const keyword = query.value.trim()
   if (!keyword) return
-  const hit = graphNodes.find((n) => n.name.includes(keyword))
+  const hit = nodes.value.find((node) => node.name.includes(keyword))
   if (hit) selectedId.value = hit.id
 }
 
 function focusWeak() {
-  const hit = graphNodes.find((n) => masteryMap[n.id] === 'weak')
+  const hit = nodes.value.find((node) => masteryMap[node.id] === 'weak')
   if (hit) selectedId.value = hit.id
 }
+
+async function loadGraph() {
+  try {
+    const graph = await api.get<GraphDto>(`/courses/${COURSE_ID}/graph`)
+    const chapterNames = graph.chapters.map((chapter) => chapter.title)
+    nodes.value = graph.nodes.map((node) => ({
+      id: node.id,
+      name: node.name,
+      category: node.category,
+      desc: node.desc,
+      refs: [],
+    })) as unknown as GraphNode[]
+    links.value = graph.links as unknown as GraphLink[]
+    categories.value = chapterNames.map((name) => ({ name }))
+  } catch {
+    // 后端不可用时保留内置图谱，页面依旧可演示
+  }
+}
+
+async function loadDetail() {
+  if (!selectedId.value) return
+  const node = nodes.value.find((item) => item.id === selectedId.value)
+  if (!node) return
+  try {
+    const detail = await api.get<{
+      title: string
+      description: string
+      sources: Evidence[]
+    }>(`/concepts/${selectedId.value}`)
+    node.desc = detail.description || node.desc
+    node.refs = (detail.sources ?? []).map((source) => {
+      const path = (source.locator?.section_path ?? []).join(' / ')
+      const page = source.locator?.page ? `第 ${source.locator.page} 页` : ''
+      return [source.title, path || page].filter(Boolean).join(' · ')
+    })
+  } catch {
+    // 详情拉取失败时保留图谱自带描述
+  }
+}
+
+watch(selectedId, () => {
+  void loadDetail()
+})
+
+onMounted(() => {
+  void loadGraph().then(() => loadDetail())
+})
 </script>
 
 <template>
@@ -95,15 +149,17 @@ function focusWeak() {
         <span class="h-2 w-2 rounded-full bg-[#9AA6BE]" />
         未学 {{ counts.new }}
       </span>
-      <span class="ml-auto text-[10px] text-muted">18 个知识点 · 21 条关系 · 索引 v3</span>
+      <span class="ml-auto text-[10px] text-muted">
+        {{ nodes.length }} 个知识点 · {{ links.length }} 条关系
+      </span>
     </div>
 
     <div class="mt-4 grid gap-4 xl:grid-cols-[1fr_328px]">
       <section class="surface relative overflow-hidden">
         <div class="h-[600px] w-full">
           <GraphCanvas
-            :nodes="graphNodes"
-            :links="graphLinks"
+            :nodes="nodes"
+            :links="links"
             :categories="categories"
             :selected-id="selectedId"
             @select="selectedId = $event"
