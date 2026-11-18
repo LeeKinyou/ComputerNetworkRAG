@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import MarkdownIt from 'markdown-it'
 import {
   Activity,
   ArrowUp,
@@ -23,8 +24,18 @@ import {
   Wrench,
   Zap,
 } from 'lucide-vue-next'
-import type { Task } from '@/mock/workbench'
+import type { Artifact, SourceRef, Task } from '@/mock/workbench'
 import { artifactLabel, tasks as seedTasks } from '@/mock/workbench'
+import {
+  ApiError,
+  api,
+  streamRunEvents,
+  type Card,
+  type Evidence,
+  type RunDetail,
+  type RunEventPayload,
+  type SessionSummary,
+} from '@/api/client'
 
 const route = useRoute()
 const localTasks = ref<Task[]>(JSON.parse(JSON.stringify(seedTasks)))
@@ -37,6 +48,11 @@ const prefix = ref(27)
 const toast = ref('')
 const savedIds = ref<string[]>([])
 const mode = ref<'rag' | 'agent'>(route.query.mode === 'rag' ? 'rag' : 'agent')
+const sessions = ref<SessionSummary[]>([])
+const streaming = ref(false)
+const demoIds = new Set(seedTasks.map((item) => item.id))
+const markdown = new MarkdownIt({ html: false, linkify: true, breaks: true })
+const renderedAnswer = computed(() => markdown.render(activeTask.value?.answer ?? ''))
 const tabs = [
   { key: 'plan' as const, label: '计划', icon: ListChecks },
   { key: 'artifact' as const, label: '产物', icon: Package },
@@ -58,7 +74,14 @@ const totalMs = computed(() => activeTask.value?.steps.reduce((s, x) => s + (x.m
 const toolCount = computed(
   () => activeTask.value?.steps.filter((s) => s.kind === 'action').length ?? 0,
 )
-const hasCalc = computed(() => activeTask.value?.artifacts.some((a) => a.kind === 'calc') ?? false)
+const hasCalc = computed(
+  () =>
+    Boolean(activeTask.value?.calc) ||
+    (activeTask.value?.artifacts.some((a) => a.kind === 'calc') ?? false),
+)
+const docCount = computed(
+  () => new Set((activeTask.value?.sources ?? []).map((item) => item.doc)).size,
+)
 
 function ipToInt(ip: string): number {
   return ip.split('.').reduce((acc, part) => ((acc << 8) + Number(part)) >>> 0, 0) >>> 0
@@ -67,7 +90,7 @@ function intToIp(n: number): string {
   return [24, 16, 8, 0].map((shift) => (n >>> shift) & 255).join('.')
 }
 const calc = computed(() => {
-  const ip = ipToInt('192.168.10.137')
+  const ip = ipToInt(activeTask.value?.calc?.ip ?? '192.168.10.137')
   const mask = prefix.value >= 32 ? 0xffffffff : ((0xffffffff << (32 - prefix.value)) >>> 0)
   const network = (ip & mask) >>> 0
   const broadcast = (network | (~mask >>> 0)) >>> 0
@@ -86,16 +109,16 @@ const calc = computed(() => {
 
 const blocks = computed(() => {
   const size = 2 ** (32 - prefix.value)
-  const start = Math.floor(ipToInt('192.168.10.137') / size) * size
-  return Array.from({ length: 6 }, (_, i) => {
-    const addr = start - size * 2 + i * size
-    return { label: intToIp(addr >>> 0).split('.').pop() ?? '0', active: addr === start }
+  const start = Math.floor(ipToInt(activeTask.value?.calc?.ip ?? '192.168.10.137') / size) * size
+  return Array.from({ length: 4 }, (_, i) => {
+    const addr = start + i * size
+    return { label: intToIp(addr >>> 0).split('.').pop() ?? '0', active: i === 0 }
   })
 })
 
 watch(selectedId, () => {
   stepsOpen.value = false
-  prefix.value = 27
+  prefix.value = activeTask.value?.calc?.prefix ?? 27
   mode.value = activeTask.value?.mode ?? 'agent'
   tab.value = 'plan'
 })
@@ -153,43 +176,313 @@ function copyAnswer() {
 
 function send() {
   const text = input.value.trim()
-  if (!text) return
-  const id = `task_new_${Date.now()}`
-  localTasks.value.unshift({
-    id,
+  if (!text || streaming.value) return
+  void ask(text)
+}
+
+onMounted(() => {
+  void loadSessions()
+})
+
+function statusOf(raw: string): Task['status'] {
+  if (raw === 'waiting_user') return 'waiting_approval'
+  if (raw === 'queued' || raw === 'running') return 'running'
+  if (raw === 'failed' || raw === 'cancelled') return raw === 'failed' ? 'failed' : 'done'
+  return 'done'
+}
+
+function timeOf(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '刚刚'
+  const now = new Date()
+  if (date.toDateString() === now.toDateString()) {
+    return `今天 ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  }
+  return `${date.getMonth() + 1}/${date.getDate()}`
+}
+
+function taskFromSession(item: SessionSummary): Task | null {
+  const run = item.last_run
+  if (!run) return null
+  return {
+    id: run.run_id,
+    title: item.title || run.question.slice(0, 24),
+    question: run.question,
+    course: '计算机网络',
+    chapter: '第 4 章 · 网络层',
+    mode: 'agent',
+    status: statusOf(run.status),
+    createdAt: timeOf(run.created_at),
+    group: '今天',
+    plan: [],
+    steps: [],
+    artifacts: [],
+    sources: [],
+    answer: '',
+  }
+}
+
+async function loadSessions() {
+  try {
+    const result = await api.get<{ items: SessionSummary[] }>(
+      '/chat-sessions?course_id=course_cn',
+    )
+    sessions.value = result.items
+    const real = result.items
+      .map(taskFromSession)
+      .filter((item): item is Task => item !== null)
+    if (real.length) {
+      localTasks.value = [...real, ...localTasks.value.filter((item) => demoIds.has(item.id))]
+      if (!selectedId.value || localTasks.value.every((item) => item.id !== selectedId.value)) {
+        selectedId.value = real[0].id
+      }
+      const current = localTasks.value.find((item) => item.id === selectedId.value)
+      if (current && !demoIds.has(current.id)) void openTask(current)
+    }
+  } catch {
+    // 后端未启动时保留演示任务，页面仍然可展示
+  }
+}
+
+async function openTask(task: Task) {
+  draft.value = false
+  selectedId.value = task.id
+  if (demoIds.has(task.id)) return
+  try {
+    const detail = await api.get<RunDetail>(`/runs/${task.id}`)
+    task.answer = detail.answer_markdown || task.answer
+    task.status = statusOf(detail.status)
+    task.pending = detail.pending_input
+    task.sources = (detail.citations ?? []).map(toSource)
+    task.artifacts = (detail.cards ?? []).map((card, index) => toArtifact(card, index, task))
+    const calcCard = (detail.cards ?? []).find((card) => card.type === 'calculation')
+    if (calcCard?.data) {
+      task.calc = calcCard.data as unknown as Task['calc']
+      prefix.value = Number(calcCard.data.prefix ?? prefix.value)
+    }
+    const history = await api.get<{ items: { type: string; payload: RunEventPayload }[] }>(
+      `/runs/${task.id}/steps`,
+    )
+    task.steps = []
+    for (const entry of history.items) applyEvent(task, entry.type, entry.payload)
+  } catch {
+    notify('这次运行的历史没能加载')
+  }
+}
+
+async function ask(text: string) {
+  let sessionId = sessions.value[0]?.id
+  try {
+    if (!sessionId) {
+      const created = await api.post<{ id: string }>('/chat-sessions', {
+        course_id: 'course_cn',
+        title: '课程问答',
+      })
+      sessionId = created.id
+      sessions.value.unshift({
+        id: sessionId,
+        course_id: 'course_cn',
+        title: '课程问答',
+        last_run: null,
+      })
+    }
+  } catch {
+    notify('后端未连接，请先确认服务在运行')
+    return
+  }
+
+  const task = reactive<Task>({
+    id: `pending_${Date.now()}`,
     title: text.length > 26 ? `${text.slice(0, 26)}…` : text,
     question: text,
     course: '计算机网络',
-    chapter: '第 3 章 · 网络层',
+    chapter: '第 4 章 · 网络层',
     mode: mode.value,
-    status: 'done',
+    status: 'running',
     createdAt: '刚刚',
     group: '今天',
-    plan: [
-      { id: 'p1', label: '理解问题与上下文', state: 'done' },
-      { id: 'p2', label: mode.value === 'rag' ? '检索课程资料' : '规划并调用工具', state: 'done' },
-      { id: 'p3', label: '组织回答与出处', state: 'done' },
-    ],
-    steps: [
-      { id: 's1', kind: 'thought', title: '已理解问题', detail: text, ms: 110 },
-      {
-        id: 's2',
-        kind: 'action',
-        title: mode.value === 'rag' ? 'hybrid_retrieve' : 'search_course',
-        detail: 'top_k=5 · 混合检索 · 索引 v3',
-        ms: 324,
-        status: 'ok',
-      },
-      { id: 's3', kind: 'observation', title: '命中 5 个课程片段', detail: '教材 §4.4、RFC 950', ms: 40 },
-    ],
+    plan: [],
+    steps: [],
     artifacts: [],
-    sources: seedTasks[0].sources,
-    answer: '（演示骨架）这是一个新任务。接入后端后，这里会流式输出带引用的回答，并把检索片段列入右侧「来源」。',
+    sources: [],
+    answer: '',
+    streaming: '',
   })
-  selectedId.value = id
+  localTasks.value.unshift(task)
+  selectedId.value = task.id
   draft.value = false
   input.value = ''
-  notify('任务已创建')
+  streaming.value = true
+
+  try {
+    const accepted = await api.post<{ run_id: string }>(
+      `/chat-sessions/${sessionId}/runs`,
+      { message: text, mode: 'course_qa' },
+    )
+    task.id = accepted.run_id
+    selectedId.value = accepted.run_id
+    await follow(task, accepted.run_id, 0)
+  } catch (error) {
+    task.status = 'failed'
+    task.answer = error instanceof ApiError ? error.message : '提问失败，请稍后重试'
+  } finally {
+    streaming.value = false
+  }
+}
+
+async function follow(task: Task, runId: string, afterSeq: number) {
+  const controller = new AbortController()
+  try {
+    await streamRunEvents(
+      runId,
+      (type, payload) => {
+        task.lastSeq = payload.seq
+        applyEvent(task, type, payload)
+        if (type === 'input.required') controller.abort()
+      },
+      { afterSeq, signal: controller.signal },
+    )
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') return
+    throw error
+  }
+}
+
+async function decide(approved: boolean) {
+  const task = activeTask.value
+  const pending = task?.pending
+  if (!task || !pending || streaming.value) return
+  streaming.value = true
+  try {
+    await api.post(`/runs/${task.id}/inputs`, {
+      input_id: pending.input_id,
+      approved,
+    })
+    task.pending = null
+    task.status = 'running'
+    await follow(task, task.id, task.lastSeq ?? 0)
+  } catch (error) {
+    notify(error instanceof ApiError ? error.message : '审批提交失败')
+  } finally {
+    streaming.value = false
+  }
+}
+
+function toSource(item: Evidence): SourceRef {
+  const locator = [
+    ...(item.locator?.section_path ?? []),
+    item.locator?.page ? `第 ${item.locator.page} 页` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  return {
+    id: item.chunk_id,
+    chunkId: item.chunk_id,
+    doc: item.title,
+    locator: locator || '课程原文',
+    score: Number(item.score ?? 0),
+    text: item.excerpt ?? '',
+  }
+}
+
+function toArtifact(card: Card, index: number, task: Task): Artifact {
+  const isCalc = card.type === 'calculation'
+  const data = card.data ?? {}
+  return {
+    id: `art_${task.id}_${index}`,
+    kind: isCalc ? 'calc' : 'answer',
+    title: card.title ?? (isCalc ? '子网计算结果' : '本次回答'),
+    summary: isCalc
+      ? `网络 ${data.network_address ?? ''} · 可用 ${data.usable_host_count ?? 0} 个主机`
+      : '来自本次回答，可继续追问或存为笔记',
+    meta: card.tool,
+    taskId: task.id,
+    createdAt: '刚刚',
+  }
+}
+
+function applyEvent(task: Task, type: string, payload: RunEventPayload) {
+  switch (type) {
+    case 'step_start':
+      task.steps.push({
+        id: `s${payload.seq}`,
+        kind: 'thought',
+        title: String(payload.title ?? '理解问题'),
+        detail: String(payload.detail ?? ''),
+      })
+      break
+    case 'plan':
+      task.plan = ((payload.items as { id: string; goal: string }[] | undefined) ?? []).map(
+        (item, index) => ({
+          id: item.id,
+          label: item.goal,
+          state: index === 0 ? 'active' : 'todo',
+        }),
+      )
+      break
+    case 'action':
+      task.steps.push({
+        id: `s${payload.seq}`,
+        kind: 'action',
+        title: String(payload.tool ?? 'tool'),
+        detail: JSON.stringify(payload.input ?? {}).slice(0, 140),
+        status: 'ok',
+      })
+      break
+    case 'observation': {
+      const summary = payload.summary
+        ? String(payload.summary)
+        : payload.error_code
+          ? `返回 ${payload.error_code}`
+          : '工具返回结果'
+      task.steps.push({
+        id: `s${payload.seq}`,
+        kind: 'observation',
+        title: summary.length > 48 ? `${summary.slice(0, 48)}…` : summary,
+        detail: payload.elapsed_ms ? `耗时 ${payload.elapsed_ms}ms` : String(payload.tool ?? ''),
+        ms: Number(payload.elapsed_ms ?? 0),
+        status: payload.status === 'error' ? 'failed' : 'ok',
+      })
+      break
+    }
+    case 'token':
+      task.streaming = (task.streaming ?? '') + String(payload.text ?? '')
+      break
+    case 'final': {
+      task.answer = String(payload.answer_markdown ?? '')
+      task.streaming = ''
+      task.status = statusOf(String(payload.status ?? 'completed'))
+      task.sources = ((payload.citations as Evidence[] | undefined) ?? []).map(toSource)
+      task.artifacts = ((payload.cards as Card[] | undefined) ?? []).map((card, index) =>
+        toArtifact(card, index, task),
+      )
+      const calcCard = ((payload.cards as Card[] | undefined) ?? []).find(
+        (card) => card.type === 'calculation',
+      )
+      if (calcCard?.data) {
+        task.calc = calcCard.data as unknown as Task['calc']
+        prefix.value = Number(calcCard.data.prefix ?? prefix.value)
+      }
+      task.plan = task.plan.map((item) => ({ ...item, state: 'done' as const }))
+      break
+    }
+    case 'input.required':
+      task.status = 'waiting_approval'
+      task.pending = payload.pending_input as Task['pending']
+      break
+    case 'resumed':
+      task.status = 'running'
+      if ('approved' in payload) task.pending = null
+      break
+    case 'run.failed':
+      task.status = 'failed'
+      task.answer = String(payload.message ?? '运行失败，请重试')
+      break
+    case 'run.cancelled':
+      task.status = 'done'
+      task.answer = '已取消本次操作'
+      break
+  }
 }
 </script>
 
@@ -213,7 +506,7 @@ function send() {
                 ? 'bg-surface shadow-[0_1px_2px_rgba(16,24,40,0.05)]'
                 : 'hover:bg-surface/60'
             "
-            @click="selectedId = t.id; draft = false"
+            @click="openTask(t)"
           >
             <div class="flex items-center gap-1.5">
               <span
@@ -223,7 +516,9 @@ function send() {
                     ? 'bg-success'
                     : t.status === 'waiting_approval'
                       ? 'bg-warn'
-                      : 'bg-brand'
+                      : t.status === 'failed'
+                        ? 'bg-[#E36A6A]'
+                        : 'animate-soft-pulse bg-brand'
                 "
               />
               <span
@@ -388,19 +683,22 @@ function send() {
                 这个动作需要你确认
               </div>
               <div class="px-3.5 py-3">
-                <p class="text-[12px] font-medium text-ink">重建课程索引（v3 → v4）</p>
+                <p class="text-[12px] font-medium text-ink">
+                  {{
+                    activeTask.pending?.tool_call_id === 'reindex_course'
+                      ? '重建课程索引'
+                      : '需要确认的操作'
+                  }}
+                </p>
                 <p class="mt-1 text-[10.5px] leading-relaxed text-muted">
-                  将替换 98 个分块的向量与 BM25 索引，期间检索结果可能短暂不一致。
+                  {{ activeTask.pending?.prompt ?? '该请求会修改课程索引，需要你确认后执行。' }}
                 </p>
                 <div class="mt-3 flex gap-2">
-                  <button class="pill-btn h-8 bg-ink px-3 text-[11px] text-canvas" @click="notify('已批准，索引重建中')">
+                  <button class="pill-btn h-8 bg-ink px-3 text-[11px] text-canvas" :disabled="streaming" @click="decide(true)">
                     <Check :size="12" />
                     批准
                   </button>
-                  <button class="pill-btn h-8 border border-line bg-surface px-3 text-[11px] text-muted" @click="notify('已转为手动模式')">
-                    修改
-                  </button>
-                  <button class="pill-btn h-8 border border-line bg-surface px-3 text-[11px] text-muted" @click="notify('已拒绝本次操作')">
+                  <button class="pill-btn h-8 border border-line bg-surface px-3 text-[11px] text-muted" :disabled="streaming" @click="decide(false)">
                     拒绝
                   </button>
                 </div>
@@ -408,8 +706,13 @@ function send() {
             </div>
 
             <template v-else>
-              <p class="mt-3 text-[13px] leading-[1.85] text-subink">
-                {{ activeTask.answer }}
+              <p v-if="activeTask.streaming" class="mt-3 whitespace-pre-wrap text-[13px] leading-[1.85] text-subink">
+                {{ activeTask.streaming }}
+              </p>
+              <div v-else-if="activeTask.answer" class="answer-md mt-3 text-[13px] leading-[1.85] text-subink" v-html="renderedAnswer" />
+              <p v-else class="mt-3 text-[13px] leading-[1.85] text-subink">正在读取课程资料…</p>
+              <p v-if="activeTask.status === 'failed'" class="mt-2 text-[10.5px] text-[#E36A6A]">
+                这次运行失败了，可以调整提问后重试。
               </p>
 
               <div v-if="hasCalc" class="mt-3.5 overflow-hidden rounded-xl border border-line bg-surface">
@@ -593,7 +896,7 @@ function send() {
             <div class="mt-2 rounded-xl border border-line bg-tint-soft px-3 py-2.5">
               <div class="flex items-center gap-1.5 text-[10px] text-muted">
                 <Search :size="11" />
-                检索命中 5 个片段 · 2 份文档 · 索引 v3
+                引用 {{ activeTask.sources.length }} 个片段 · {{ docCount }} 份文档
               </div>
             </div>
           </div>

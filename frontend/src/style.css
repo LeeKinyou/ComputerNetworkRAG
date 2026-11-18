@@ -110,6 +110,45 @@ body {
   .pill-btn {
     @apply inline-flex items-center gap-1.5 rounded-full px-4 text-[12.5px] font-medium transition-all duration-200 active:scale-[0.98];
   }
+  .answer-md p {
+    margin: 0 0 8px;
+  }
+  .answer-md strong {
+    color: var(--color-ink);
+    font-weight: 600;
+  }
+  .answer-md code {
+    border-radius: 5px;
+    background: var(--color-tint);
+    padding: 1px 5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px;
+    color: var(--color-subink);
+  }
+  .answer-md blockquote {
+    margin: 8px 0;
+    border-left: 2px solid var(--color-line-strong);
+    padding-left: 10px;
+    color: var(--color-muted);
+  }
+  .answer-md ul,
+  .answer-md ol {
+    margin: 6px 0 9px;
+    padding-left: 18px;
+    list-style: disc;
+  }
+  .answer-md ol {
+    list-style: decimal;
+  }
+  .answer-md li {
+    margin: 2px 0;
+  }
+  .answer-md h3 {
+    margin: 12px 0 5px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-ink);
+  }
 }
 
 @keyframes fade-up {
