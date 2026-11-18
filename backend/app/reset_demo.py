@@ -14,7 +14,7 @@ import asyncio
 from sqlalchemy import delete, func, select
 
 from app.db import SessionFactory, shutdown_db
-from app.models import ChatSession, Chunk, Document, Message, Run, RunStep
+from app.models import Attempt, ChatSession, Chunk, Document, Message, Run, RunStep
 
 
 async def reset(with_documents: bool) -> None:
@@ -23,11 +23,13 @@ async def reset(with_documents: bool) -> None:
         sessions = await session.scalar(select(func.count()).select_from(ChatSession)) or 0
         messages = await session.scalar(select(func.count()).select_from(Message)) or 0
         steps = await session.scalar(select(func.count()).select_from(RunStep)) or 0
+        attempts = await session.scalar(select(func.count()).select_from(Attempt)) or 0
 
         await session.execute(delete(RunStep))
         await session.execute(delete(Run))
         await session.execute(delete(Message))
         await session.execute(delete(ChatSession))
+        await session.execute(delete(Attempt))
 
         removed_docs = 0
         if with_documents:
@@ -43,7 +45,7 @@ async def reset(with_documents: bool) -> None:
 
         await session.commit()
 
-    print(f"已清空：{runs} 条运行、{sessions} 个会话、{messages} 条消息、{steps} 个步骤。")
+    print(f"已清空：{runs} 条运行、{sessions} 个会话、{messages} 条消息、{steps} 个步骤、{attempts} 条练习记录。")
     if with_documents:
         print(f"已移除 {removed_docs} 份后台上传文档（预置文档保留）。")
     else:

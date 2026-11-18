@@ -1,4 +1,4 @@
-"""ORM 模型：课程、知识点、文档分块、对话、运行与步骤事件。
+"""ORM 模型：课程、知识点、文档分块、对话、运行、练习与作答。
 
 MVP 只保留演示主线所需字段；题库、批改、复习等表在后续里程碑追加。
 """
@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from app.util import new_id, utcnow
@@ -134,4 +134,38 @@ class RunStep(Base):
     seq: Mapped[int] = mapped_column(Integer, default=0)
     type: Mapped[str] = mapped_column(String(32))
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class Question(Base):
+    """课程题库：单选与判断，答案与解析只在提交后返回。"""
+
+    __tablename__ = "questions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    course_id: Mapped[str] = mapped_column(String(36), index=True)
+    chapter_id: Mapped[str] = mapped_column(String(36), index=True)
+    concept_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    type: Mapped[str] = mapped_column(String(16), default="single")  # single / judge
+    stem: Mapped[str] = mapped_column(Text)
+    options: Mapped[list] = mapped_column(JSON, default=list)
+    answer: Mapped[str] = mapped_column(String(8))
+    explanation: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[str] = mapped_column(String(200), default="")
+    difficulty: Mapped[str] = mapped_column(String(16), default="medium")  # easy / medium / hard
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class Attempt(Base):
+    """一次作答记录，供正确率、章节掌握与错题本使用。"""
+
+    __tablename__ = "attempts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    course_id: Mapped[str] = mapped_column(String(36), index=True)
+    question_id: Mapped[str] = mapped_column(ForeignKey("questions.id", ondelete="CASCADE"), index=True)
+    user_key: Mapped[str] = mapped_column(String(64), default="demo_user", index=True)
+    chapter_id: Mapped[str] = mapped_column(String(36), index=True)
+    answer: Mapped[str] = mapped_column(String(8))
+    is_correct: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

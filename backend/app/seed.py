@@ -5,10 +5,10 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.db import SessionFactory
-from app.models import Chapter, Chunk, Concept, ConceptEdge, Course, Document
+from app.models import Chapter, Chunk, Concept, ConceptEdge, Course, Document, Question
 from app.util import new_id
 
 COURSE_ID = "course_cn"
@@ -168,10 +168,423 @@ SEED_DOCUMENTS = [
 ]
 
 
+# 题库：单选与判断，覆盖 6 章。answer 只存选项 key（单选 A-D、判断 T/F）。
+QUESTIONS = [
+    {
+        "id": "q_ch1_01",
+        "chapter_id": "ch_01",
+        "concept_id": "osi",
+        "type": "single",
+        "stem": "OSI 七层模型中，负责为主机之间提供端到端可靠传输的是哪一层？",
+        "options": [
+            {"key": "A", "text": "网络层"},
+            {"key": "B", "text": "传输层"},
+            {"key": "C", "text": "数据链路层"},
+            {"key": "D", "text": "会话层"},
+        ],
+        "answer": "B",
+        "explanation": "传输层通过 TCP 提供端到端的可靠传输；网络层负责分组转发与路由选择，不保证可靠交付。",
+        "source": "教材 §1.2 分层模型",
+        "difficulty": "easy",
+    },
+    {
+        "id": "q_ch1_02",
+        "chapter_id": "ch_01",
+        "concept_id": "osi",
+        "type": "judge",
+        "stem": "在 OSI 模型中，路由选择发生在数据链路层。",
+        "options": [
+            {"key": "T", "text": "正确"},
+            {"key": "F", "text": "错误"},
+        ],
+        "answer": "F",
+        "explanation": "路由选择属于网络层的职责；数据链路层只负责相邻节点之间的帧传输与差错检测。",
+        "source": "教材 §1.2 分层模型",
+        "difficulty": "easy",
+    },
+    {
+        "id": "q_ch1_03",
+        "chapter_id": "ch_01",
+        "concept_id": "osi",
+        "type": "single",
+        "stem": "TCP/IP 四层模型中不包含下列哪一层？",
+        "options": [
+            {"key": "A", "text": "应用层"},
+            {"key": "B", "text": "传输层"},
+            {"key": "C", "text": "网际层"},
+            {"key": "D", "text": "表示层"},
+        ],
+        "answer": "D",
+        "explanation": "TCP/IP 四层为应用层、传输层、网际层和网络接口层；表示层与会话层只存在于 OSI 七层模型。",
+        "source": "教材 §1.3 TCP/IP 体系",
+        "difficulty": "medium",
+    },
+    {
+        "id": "q_ch1_04",
+        "chapter_id": "ch_01",
+        "concept_id": "osi",
+        "type": "judge",
+        "stem": "数据从应用层向下发送时，会依次封装为 TCP 段、IP 包和以太网帧。",
+        "options": [
+            {"key": "T", "text": "正确"},
+            {"key": "F", "text": "错误"},
+        ],
+        "answer": "T",
+        "explanation": "每层在数据前加上本层首部：传输层加 TCP 首部形成段，网络层加 IP 首部形成包，链路层加帧首尾形成帧。",
+        "source": "教材 §1.4 封装与解封装",
+        "difficulty": "easy",
+    },
+    {
+        "id": "q_ch2_01",
+        "chapter_id": "ch_02",
+        "concept_id": "mac",
+        "type": "single",
+        "stem": "MAC 地址的长度是多少位？",
+        "options": [
+            {"key": "A", "text": "32 位"},
+            {"key": "B", "text": "48 位"},
+            {"key": "C", "text": "64 位"},
+            {"key": "D", "text": "128 位"},
+        ],
+        "answer": "B",
+        "explanation": "MAC 地址为 48 位，前 24 位是厂商 OUI，后 24 位由厂商分配；它只在同一广播域内用于帧的交付。",
+        "source": "教材 §2.3 MAC 地址",
+        "difficulty": "easy",
+    },
+    {
+        "id": "q_ch2_02",
+        "chapter_id": "ch_02",
+        "concept_id": "csma",
+        "type": "single",
+        "stem": "CSMA/CD 主要用于下列哪种场景？",
+        "options": [
+            {"key": "A", "text": "全双工交换式以太网"},
+            {"key": "B", "text": "半双工共享介质以太网"},
+            {"key": "C", "text": "无线局域网"},
+            {"key": "D", "text": "点对点光纤链路"},
+        ],
+        "answer": "B",
+        "explanation": "CSMA/CD 依赖共享介质上的冲突检测；全双工交换网络中每条链路独立，不再需要冲突检测。",
+        "source": "教材 §2.4 CSMA/CD",
+        "difficulty": "medium",
+    },
+    {
+        "id": "q_ch2_03",
+        "chapter_id": "ch_02",
+        "concept_id": "arp",
+        "type": "single",
+        "stem": "ARP 协议的作用是什么？",
+        "options": [
+            {"key": "A", "text": "把域名解析为 IP 地址"},
+            {"key": "B", "text": "把 IP 地址解析为 MAC 地址"},
+            {"key": "C", "text": "动态分配 IP 地址"},
+            {"key": "D", "text": "计算子网掩码"},
+        ],
+        "answer": "B",
+        "explanation": "ARP 在同一局域网内广播请求，把 IPv4 地址解析为 MAC 地址；域名解析由 DNS 完成，地址分配由 DHCP 完成。",
+        "source": "教材 §2.5 ARP",
+        "difficulty": "easy",
+    },
+    {
+        "id": "q_ch2_04",
+        "chapter_id": "ch_02",
+        "concept_id": "arp",
+        "type": "judge",
+        "stem": "在同一个广播域内，ARP 请求通常以广播方式发送。",
+        "options": [
+            {"key": "T", "text": "正确"},
+            {"key": "F", "text": "错误"},
+        ],
+        "answer": "T",
+        "explanation": "请求方不知道目标的 MAC 地址，只能广播询问；收到请求的目标主机再以单播方式应答。",
+        "source": "教材 §2.5 ARP",
+        "difficulty": "easy",
+    },
+    {
+        "id": "q_ch3_01",
+        "chapter_id": "ch_03",
+        "concept_id": "mask",
+        "type": "single",
+        "stem": "192.168.10.137/27 的网络地址是下列哪一个？",
+        "options": [
+            {"key": "A", "text": "192.168.10.0"},
+            {"key": "B", "text": "192.168.10.128"},
+            {"key": "C", "text": "192.168.10.136"},
+            {"key": "D", "text": "192.168.10.160"},
+        ],
+        "answer": "B",
+        "explanation": "/27 的块大小为 32，137 落在 128–159 这一块，因此网络地址是 192.168.10.128，广播地址是 192.168.10.159。",
+        "source": "实验手册 实验一",
+        "difficulty": "medium",
+    },
+    {
+        "id": "q_ch3_02",
+        "chapter_id": "ch_03",
+        "concept_id": "mask",
+        "type": "single",
+        "stem": "一个 /28 子网可用的主机地址数量是多少？",
+        "options": [
+            {"key": "A", "text": "14 个"},
+            {"key": "B", "text": "15 个"},
+            {"key": "C", "text": "16 个"},
+            {"key": "D", "text": "30 个"},
+        ],
+        "answer": "A",
+        "explanation": "/28 共 16 个地址，去掉网络地址与广播地址后剩 14 个可用主机地址。",
+        "source": "实验手册 实验二",
+        "difficulty": "medium",
+    },
+    {
+        "id": "q_ch3_03",
+        "chapter_id": "ch_03",
+        "concept_id": "route",
+        "type": "judge",
+        "stem": "最长前缀匹配时，前缀越长表示条目越具体，优先级越高。",
+        "options": [
+            {"key": "T", "text": "正确"},
+            {"key": "F", "text": "错误"},
+        ],
+        "answer": "T",
+        "explanation": "路由器在多个匹配条目中选择前缀最长的一条；默认路由 0.0.0.0/0 前缀最短，只作兜底。",
+        "source": "教材 §4.6 路由与转发",
+        "difficulty": "easy",
+    },
+    {
+        "id": "q_ch3_04",
+        "chapter_id": "ch_03",
+        "concept_id": "nat",
+        "type": "single",
+        "stem": "下列哪一个是 IPv4 的私有地址段？",
+        "options": [
+            {"key": "A", "text": "8.8.8.0/24"},
+            {"key": "B", "text": "10.0.0.0/8"},
+            {"key": "C", "text": "203.0.113.0/24"},
+            {"key": "D", "text": "192.0.2.0/24"},
+        ],
+        "answer": "B",
+        "explanation": "私有地址段包括 10.0.0.0/8、172.16.0.0/12 和 192.168.0.0/16；其余选项是公网地址或文档示例段。",
+        "source": "教材 §4.7 NAT 与私有地址",
+        "difficulty": "medium",
+    },
+    {
+        "id": "q_ch4_01",
+        "chapter_id": "ch_04",
+        "concept_id": "handshake",
+        "type": "single",
+        "stem": "TCP 三次握手的第二个报文是什么？",
+        "options": [
+            {"key": "A", "text": "SYN"},
+            {"key": "B", "text": "SYN + ACK"},
+            {"key": "C", "text": "ACK"},
+            {"key": "D", "text": "FIN"},
+        ],
+        "answer": "B",
+        "explanation": "握手顺序为 SYN → SYN+ACK → ACK：服务端在第二个报文中同时确认客户端序号并同步自己的初始序号。",
+        "source": "教材 §5.3 三次握手",
+        "difficulty": "easy",
+    },
+    {
+        "id": "q_ch4_02",
+        "chapter_id": "ch_04",
+        "concept_id": "udp",
+        "type": "judge",
+        "stem": "UDP 提供可靠传输与丢包重传机制。",
+        "options": [
+            {"key": "T", "text": "正确"},
+            {"key": "F", "text": "错误"},
+        ],
+        "answer": "F",
+        "explanation": "UDP 只提供端口复用与校验和，不保证到达、顺序或重传；可靠性需要应用层自行实现。",
+        "source": "教材 §5.4 UDP",
+        "difficulty": "easy",
+    },
+    {
+        "id": "q_ch4_03",
+        "chapter_id": "ch_04",
+        "concept_id": "congestion",
+        "type": "single",
+        "stem": "TCP 慢启动阶段，拥塞窗口 cwnd 的变化趋势是什么？",
+        "options": [
+            {"key": "A", "text": "线性增长"},
+            {"key": "B", "text": "指数增长"},
+            {"key": "C", "text": "保持不变"},
+            {"key": "D", "text": "立即减半"},
+        ],
+        "answer": "B",
+        "explanation": "慢启动阶段每收到一个 ACK 就把 cwnd 加一，实际效果是每个 RTT 翻倍，呈指数增长；达到阈值后进入拥塞避免的线性增长。",
+        "source": "教材 §5.5 拥塞控制",
+        "difficulty": "medium",
+    },
+    {
+        "id": "q_ch4_04",
+        "chapter_id": "ch_04",
+        "concept_id": "tcp",
+        "type": "judge",
+        "stem": "TCP 是面向字节流的协议，不保留应用层的消息边界。",
+        "options": [
+            {"key": "T", "text": "正确"},
+            {"key": "F", "text": "错误"},
+        ],
+        "answer": "T",
+        "explanation": "TCP 按字节编号与确认，多个发送可能被合并或拆分，应用层需要自己约定消息边界。",
+        "source": "教材 §5.2 TCP 服务模型",
+        "difficulty": "medium",
+    },
+    {
+        "id": "q_ch5_01",
+        "chapter_id": "ch_05",
+        "concept_id": "http",
+        "type": "single",
+        "stem": "HTTP/2 相对 HTTP/1.1 的主要改进是什么？",
+        "options": [
+            {"key": "A", "text": "强制使用加密"},
+            {"key": "B", "text": "在一条连接上多路复用多个请求"},
+            {"key": "C", "text": "取消请求头"},
+            {"key": "D", "text": "每次请求都新建连接"},
+        ],
+        "answer": "B",
+        "explanation": "HTTP/2 引入二进制分帧与多路复用，多个请求共享一条连接，避免队头阻塞；加密并非协议强制。",
+        "source": "教材 §6.2 HTTP 演进",
+        "difficulty": "medium",
+    },
+    {
+        "id": "q_ch5_02",
+        "chapter_id": "ch_05",
+        "concept_id": "dns",
+        "type": "single",
+        "stem": "DNS 服务默认使用的端口是多少？",
+        "options": [
+            {"key": "A", "text": "21"},
+            {"key": "B", "text": "53"},
+            {"key": "C", "text": "80"},
+            {"key": "D", "text": "443"},
+        ],
+        "answer": "B",
+        "explanation": "DNS 默认使用 53 端口，通常基于 UDP，响应过大时切换到 TCP。",
+        "source": "教材 §6.1 DNS",
+        "difficulty": "easy",
+    },
+    {
+        "id": "q_ch5_03",
+        "chapter_id": "ch_05",
+        "concept_id": "tls",
+        "type": "judge",
+        "stem": "HTTPS 是 HTTP over TLS，由 TLS 提供加密、完整性校验与身份认证。",
+        "options": [
+            {"key": "T", "text": "正确"},
+            {"key": "F", "text": "错误"},
+        ],
+        "answer": "T",
+        "explanation": "HTTPS 在 HTTP 与 TCP 之间加入 TLS，证书用于身份认证，握手协商出会话密钥用于加密与完整性保护。",
+        "source": "教材 §6.4 HTTPS",
+        "difficulty": "easy",
+    },
+    {
+        "id": "q_ch5_04",
+        "chapter_id": "ch_05",
+        "concept_id": "http",
+        "type": "single",
+        "stem": "HTTP 状态码 404 表示什么？",
+        "options": [
+            {"key": "A", "text": "请求成功"},
+            {"key": "B", "text": "需要身份认证"},
+            {"key": "C", "text": "请求的资源不存在"},
+            {"key": "D", "text": "服务器内部错误"},
+        ],
+        "answer": "C",
+        "explanation": "404 Not Found 表示服务器找不到请求的资源；401 表示未认证，500 表示服务器内部错误。",
+        "source": "教材 §6.2 HTTP 状态码",
+        "difficulty": "easy",
+    },
+    {
+        "id": "q_ch6_01",
+        "chapter_id": "ch_06",
+        "concept_id": "tls",
+        "type": "single",
+        "stem": "TLS 不提供下列哪项能力？",
+        "options": [
+            {"key": "A", "text": "加密传输内容"},
+            {"key": "B", "text": "校验数据完整性"},
+            {"key": "C", "text": "认证服务器身份"},
+            {"key": "D", "text": "选择数据包的路由路径"},
+        ],
+        "answer": "D",
+        "explanation": "TLS 提供机密性、完整性与身份认证；路由选择属于网络层，与 TLS 无关。",
+        "source": "教材 §7.3 TLS",
+        "difficulty": "easy",
+    },
+    {
+        "id": "q_ch6_02",
+        "chapter_id": "ch_06",
+        "concept_id": "tls",
+        "type": "judge",
+        "stem": "数字证书的作用是把公钥与身份绑定，并由可信 CA 签名。",
+        "options": [
+            {"key": "T", "text": "正确"},
+            {"key": "F", "text": "错误"},
+        ],
+        "answer": "T",
+        "explanation": "证书把主体身份与公钥绑定，CA 用私钥签名；客户端用内置的 CA 公钥验证签名，从而确认公钥归属。",
+        "source": "教材 §7.4 证书体系",
+        "difficulty": "medium",
+    },
+    {
+        "id": "q_ch6_03",
+        "chapter_id": "ch_06",
+        "concept_id": "tls",
+        "type": "single",
+        "stem": "对称加密相比非对称加密的主要优势是什么？",
+        "options": [
+            {"key": "A", "text": "密钥分发更容易"},
+            {"key": "B", "text": "加解密速度更快"},
+            {"key": "C", "text": "完全不需要密钥"},
+            {"key": "D", "text": "可以直接提供数字签名"},
+        ],
+        "answer": "B",
+        "explanation": "对称算法运算量小、速度快，适合大量数据；但密钥分发困难，实际协议通常用非对称算法协商会话密钥。",
+        "source": "教材 §7.2 对称与非对称",
+        "difficulty": "medium",
+    },
+    {
+        "id": "q_ch6_04",
+        "chapter_id": "ch_06",
+        "concept_id": None,
+        "type": "judge",
+        "stem": "防火墙只能部署在应用层，无法在网络层过滤流量。",
+        "options": [
+            {"key": "T", "text": "正确"},
+            {"key": "F", "text": "错误"},
+        ],
+        "answer": "F",
+        "explanation": "包过滤防火墙工作在网络层与传输层，按源/目的地址、端口和协议过滤；应用层防火墙则是另一类实现。",
+        "source": "教材 §7.5 防火墙",
+        "difficulty": "hard",
+    },
+]
+
+
+async def _seed_questions(session) -> None:
+    """题库独立补种：旧演示库已有课程时也能拿到题目。"""
+    count = await session.scalar(select(func.count()).select_from(Question))
+    if count:
+        return
+    for index, item in enumerate(QUESTIONS):
+        session.add(
+            Question(
+                course_id=COURSE_ID,
+                sort_order=index,
+                **{key: value for key, value in item.items() if key != "id"},
+                id=item["id"],
+            )
+        )
+    await session.commit()
+
+
 async def seed_if_empty() -> None:
     async with SessionFactory() as session:
         existing = await session.scalar(select(Course).where(Course.id == COURSE_ID))
         if existing:
+            await _seed_questions(session)
             return
 
         session.add(
@@ -240,3 +653,4 @@ async def seed_if_empty() -> None:
                 )
 
         await session.commit()
+        await _seed_questions(session)

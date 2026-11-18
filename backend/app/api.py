@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import random
 from collections import Counter
 from datetime import timedelta
 from typing import Annotated
@@ -18,7 +19,8 @@ from app.agent import TERMINAL, emit, execute_run, start_run
 from app.config import settings
 from app.db import get_session
 from app.ingest import IngestError, ingest_document
-from app.models import Chapter, ChatSession, Chunk, Concept, ConceptEdge, Course, Document, Message, Run, RunStep
+from app.models import Attempt, Chapter, ChatSession, Chunk, Concept, ConceptEdge, Course, Document, Message, Question, Run, RunStep
+from app.practice import answer_summary
 from app.retrieval import retriever
 from app.seed import COURSE_ID
 from app.tools import get_concept
@@ -552,6 +554,188 @@ async def analytics_overview(session: SessionDep, course_id: str = COURSE_ID) ->
             "count": len(documents),
             "chunks": sum(doc.chunk_count for doc in documents),
         },
+    }
+
+
+class AttemptIn(BaseModel):
+    question_id: str = Field(min_length=1, max_length=36)
+    answer: str = Field(default="", max_length=8)
+    user_key: str = Field(default="demo_user", max_length=64)
+
+
+def _question_public(question: Question, chapter_title: str = "") -> dict:
+    """题目对外结构：不下发答案与解析，提交后再返回。"""
+    return {
+        "id": question.id,
+        "chapter_id": question.chapter_id,
+        "chapter_title": chapter_title,
+        "concept_id": question.concept_id,
+        "type": question.type,
+        "stem": question.stem,
+        "options": question.options,
+        "difficulty": question.difficulty,
+    }
+
+
+@router.get("/questions")
+async def list_questions(
+    session: SessionDep,
+    course_id: str = COURSE_ID,
+    chapter_id: str | None = None,
+    limit: int = Query(10, ge=1, le=30),
+    shuffle: bool = True,
+) -> dict:
+    stmt = select(Question).where(Question.course_id == course_id)
+    if chapter_id:
+        stmt = stmt.where(Question.chapter_id == chapter_id)
+    questions = (await session.execute(stmt.order_by(Question.sort_order))).scalars().all()
+    if shuffle and len(questions) > limit:
+        questions = random.sample(questions, limit)
+    else:
+        questions = questions[:limit]
+    chapters = (
+        await session.execute(select(Chapter).where(Chapter.course_id == course_id))
+    ).scalars().all()
+    titles = {chapter.id: chapter.title for chapter in chapters}
+    return {
+        "course_id": course_id,
+        "total": len(questions),
+        "items": [_question_public(question, titles.get(question.chapter_id, "")) for question in questions],
+    }
+
+
+async def _attempt_stats(session: AsyncSession, user_key: str, course_id: str) -> dict:
+    attempts = (
+        await session.execute(
+            select(Attempt).where(Attempt.course_id == course_id, Attempt.user_key == user_key)
+        )
+    ).scalars().all()
+    total = len(attempts)
+    correct = sum(1 for attempt in attempts if attempt.is_correct)
+    return {
+        "total": total,
+        "correct": correct,
+        "rate": round(correct * 100 / total) if total else 0,
+    }
+
+
+@router.post("/practice/attempts", status_code=201)
+async def create_attempt(payload: AttemptIn, session: SessionDep) -> dict:
+    question = await session.get(Question, payload.question_id)
+    if question is None or question.course_id != COURSE_ID:
+        raise _fail(404, "QUESTION_NOT_FOUND", "题目不存在")
+    summary = answer_summary(question.type, payload.answer, question.answer)
+    attempt = Attempt(
+        course_id=COURSE_ID,
+        question_id=question.id,
+        user_key=payload.user_key,
+        chapter_id=question.chapter_id,
+        answer=summary["answer"] or "",
+        is_correct=summary["correct"],
+    )
+    session.add(attempt)
+    await session.commit()
+    stats = await _attempt_stats(session, payload.user_key, COURSE_ID)
+    return {
+        "attempt_id": attempt.id,
+        "correct": summary["correct"],
+        "given": summary["answer"],
+        "expected": summary["expected"],
+        "explanation": question.explanation,
+        "source": question.source,
+        "stats": stats,
+    }
+
+
+@router.get("/practice/attempts")
+async def list_attempts(
+    session: SessionDep,
+    user_key: str = "demo_user",
+    limit: int = Query(20, ge=1, le=100),
+) -> dict:
+    rows = (
+        await session.execute(
+            select(Attempt)
+            .where(Attempt.user_key == user_key)
+            .order_by(Attempt.created_at.desc())
+            .limit(limit)
+        )
+    ).scalars().all()
+    questions = {question.id: question for question in (await session.execute(select(Question))).scalars().all()}
+    items = []
+    for row in rows:
+        question = questions.get(row.question_id)
+        items.append(
+            {
+                "attempt_id": row.id,
+                "question_id": row.question_id,
+                "stem": question.stem if question else "题目已移除",
+                "type": question.type if question else "single",
+                "chapter_id": row.chapter_id,
+                "answer": row.answer,
+                "expected": question.answer if question else "",
+                "correct": row.is_correct,
+                "created_at": iso(row.created_at),
+            }
+        )
+    return {"items": items}
+
+
+@router.get("/practice/stats")
+async def practice_stats(
+    session: SessionDep,
+    course_id: str = COURSE_ID,
+    user_key: str = "demo_user",
+) -> dict:
+    attempts = (
+        await session.execute(
+            select(Attempt).where(Attempt.course_id == course_id, Attempt.user_key == user_key)
+        )
+    ).scalars().all()
+    questions = {question.id: question for question in (await session.execute(select(Question))).scalars().all()}
+    chapters = (
+        await session.execute(select(Chapter).where(Chapter.course_id == course_id))
+    ).scalars().all()
+    titles = {chapter.id: chapter.title for chapter in chapters}
+
+    total = len(attempts)
+    correct = sum(1 for attempt in attempts if attempt.is_correct)
+
+    chapter_rows: dict[str, dict] = {}
+    wrong_rows: dict[str, dict] = {}
+    for attempt in attempts:
+        bucket = chapter_rows.setdefault(
+            attempt.chapter_id,
+            {"chapter_id": attempt.chapter_id, "label": titles.get(attempt.chapter_id, "未挂章节"), "attempts": 0, "correct": 0},
+        )
+        bucket["attempts"] += 1
+        if attempt.is_correct:
+            bucket["correct"] += 1
+        else:
+            question = questions.get(attempt.question_id)
+            row = wrong_rows.setdefault(
+                attempt.question_id,
+                {
+                    "question_id": attempt.question_id,
+                    "stem": question.stem if question else "题目已移除",
+                    "chapter_id": attempt.chapter_id,
+                    "wrong_count": 0,
+                },
+            )
+            row["wrong_count"] += 1
+
+    by_chapter = [
+        {**row, "rate": round(row["correct"] * 100 / row["attempts"]) if row["attempts"] else 0}
+        for row in chapter_rows.values()
+    ]
+    by_chapter.sort(key=lambda item: item["rate"])
+
+    return {
+        "total": total,
+        "correct": correct,
+        "rate": round(correct * 100 / total) if total else 0,
+        "by_chapter": by_chapter,
+        "wrong_questions": sorted(wrong_rows.values(), key=lambda item: item["wrong_count"], reverse=True)[:8],
     }
 
 
