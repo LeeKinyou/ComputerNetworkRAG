@@ -294,9 +294,27 @@ async def list_sessions(session: SessionDep, course_id: str | None = None) -> di
     if course_id:
         query = query.where(ChatSession.course_id == course_id)
     sessions = (await session.execute(query)).scalars().all()
-    return {
-        "items": [{"id": s.id, "course_id": s.course_id, "title": s.title} for s in sessions]
-    }
+    items = []
+    for item in sessions:
+        last_run = await session.scalar(
+            select(Run).where(Run.session_id == item.id).order_by(Run.created_at.desc()).limit(1)
+        )
+        items.append(
+            {
+                "id": item.id,
+                "course_id": item.course_id,
+                "title": item.title,
+                "last_run": {
+                    "run_id": last_run.id,
+                    "question": last_run.question,
+                    "status": last_run.status,
+                    "created_at": iso(last_run.created_at),
+                }
+                if last_run
+                else None,
+            }
+        )
+    return {"items": items}
 
 
 @router.get("/chat-sessions/{session_id}/messages")
@@ -327,6 +345,8 @@ async def create_run(session_id: str, payload: RunCreate, session: SessionDep) -
         question=payload.message,
         status="queued",
     )
+    if chat.title in ("新会话", ""):
+        chat.title = payload.message[:24]
     session.add(run)
     session.add(Message(id=new_id(), session_id=session_id, role="user", content=payload.message))
     await session.commit()
@@ -358,6 +378,18 @@ async def get_run(run_id: str, session: SessionDep) -> dict:
         "error_code": run.error_code,
         "latest_seq": run.latest_seq,
         "created_at": iso(run.created_at),
+    }
+
+
+@router.get("/runs/{run_id}/steps")
+async def run_steps(run_id: str, session: SessionDep) -> dict:
+    steps = (
+        await session.execute(
+            select(RunStep).where(RunStep.run_id == run_id).order_by(RunStep.seq)
+        )
+    ).scalars().all()
+    return {
+        "items": [{"seq": step.seq, "type": step.type, "payload": step.payload} for step in steps]
     }
 
 
@@ -416,7 +448,6 @@ async def submit_input(run_id: str, payload: RunInput, session: SessionDep) -> d
     pending = run.pending_input or {}
     if run.status != "waiting_user" or pending.get("input_id") != payload.input_id:
         raise _fail(409, "RUN_NOT_WAITING", "当前运行不在等待审批状态")
-    run.pending_input = None
     run.status = "running"
     await session.commit()
     await execute_run(run_id, resume={"approved": payload.approved})
