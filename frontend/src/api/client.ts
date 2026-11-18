@@ -15,6 +15,21 @@ export class ApiError extends Error {
   }
 }
 
+export interface AnalyticsOverview {
+  questions: number
+  questions_week: number
+  questions_month: number
+  pending_approvals: number
+  tool_calls: number
+  completion_rate: number
+  mode_split: { rag: number; agent: number }
+  daily: { date: string; count: number }[]
+  hot_questions: { question: string; count: number }[]
+  chapter_focus: { label: string; value: number }[]
+  top_documents: { title: string; count: number }[]
+  documents: { count: number; chunks: number }
+}
+
 const BASE = '/api/v2'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -100,7 +115,7 @@ export interface SessionSummary {
   id: string
   course_id: string
   title: string
-  last_run: { run_id: string; question: string; status: string; created_at: string } | null
+  last_run: { run_id: string; question: string; status: string; mode: string; created_at: string } | null
 }
 
 export interface RunDetail {

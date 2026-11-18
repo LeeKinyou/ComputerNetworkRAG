@@ -210,7 +210,7 @@ function taskFromSession(item: SessionSummary): Task | null {
     question: run.question,
     course: '计算机网络',
     chapter: '第 4 章 · 网络层',
-    mode: 'agent',
+    mode: run.mode === 'rag' ? 'rag' : 'agent',
     status: statusOf(run.status),
     createdAt: timeOf(run.created_at),
     group: '今天',
@@ -317,7 +317,7 @@ async function ask(text: string) {
   try {
     const accepted = await api.post<{ run_id: string }>(
       `/chat-sessions/${sessionId}/runs`,
-      { message: text, mode: 'course_qa' },
+      { message: text, mode: mode.value },
     )
     task.id = accepted.run_id
     selectedId.value = accepted.run_id
