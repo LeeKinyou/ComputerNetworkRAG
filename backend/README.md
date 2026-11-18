@@ -50,6 +50,19 @@ uv run python -m app.main
 | GET | `/api/v2/runs/{id}/steps` | 运行事件回放（前端恢复历史任务） |
 | GET | `/api/v2/runs/{id}/events` | SSE：计划、工具调用、观察、token、审批、终态 |
 | POST | `/api/v2/runs/{id}/inputs` | 审批结果，恢复被中断的运行 |
+| GET | `/api/v2/analytics/overview` | 课程使用统计：提问量、完成率、章节关注度、高频问题 |
+
+## 演示前重置
+
+停掉服务后，在 `backend` 目录执行：
+
+```bash
+uv run python -m app.reset_demo              # 只清任务、消息、运行记录
+uv run python -m app.reset_demo --documents  # 同时移除后台上传的文档
+```
+
+课程种子、知识点与三份预置课件始终保留。历史运行对应的检查点不会被这里删除；
+需要一并清空时，删除 `runtime/checkpoints.db` 再启动服务。
 
 ## 事件流
 
@@ -59,7 +72,8 @@ uv run python -m app.main
 
 ## Agent 结构
 
-`app/agent.py` 用 LangGraph `StateGraph`：分析 → 检索 → 计算 → 审批 → 组织 → 落库。
+`app/agent.py` 用 LangGraph `StateGraph`：分析 → 检索 →（计算 → 审批）→ 组织 → 落库。
+`mode=rag` 的快速检索走「分析 → 检索 → 组织」，不触达计算与审批；默认的智能体模式保留完整链路。
 写操作（如「重建第 4 章索引」）会进入 `waiting_user`，`interrupt()` 挂起；前端提交
 `POST /runs/{id}/inputs` 后以 `Command(resume=...)` 继续。审批参数带 `args_hash`，客户端不能改写。
 
