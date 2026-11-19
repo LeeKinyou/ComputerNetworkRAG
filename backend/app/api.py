@@ -584,12 +584,15 @@ async def list_questions(
     session: SessionDep,
     course_id: str = COURSE_ID,
     chapter_id: str | None = None,
+    concept_id: str | None = None,
     limit: int = Query(10, ge=1, le=30),
     shuffle: bool = True,
 ) -> dict:
     stmt = select(Question).where(Question.course_id == course_id)
     if chapter_id:
         stmt = stmt.where(Question.chapter_id == chapter_id)
+    if concept_id:
+        stmt = stmt.where(Question.concept_id == concept_id)
     questions = (await session.execute(stmt.order_by(Question.sort_order))).scalars().all()
     if shuffle and len(questions) > limit:
         questions = random.sample(questions, limit)
