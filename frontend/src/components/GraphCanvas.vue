@@ -15,6 +15,7 @@ const props = defineProps<{
   links: GraphLink[]
   categories: { name: string }[]
   selectedId?: string | null
+  mastery?: Record<string, Mastery>
   forceDark?: boolean
 }>()
 
@@ -60,10 +61,10 @@ const theme = computed(() =>
         tooltipBorder: '#2a2d35',
         tooltipText: '#f2f3f5',
         label: '#c6cad2',
+        labelDim: 'rgba(198,202,210,0.5)',
         nodeBorder: '#131519',
         nodeShadow: 'rgba(0,0,0,0.45)',
-        edgeSolid: '#454b58',
-        edgeDashed: '#30343d',
+        edges: { prerequisite: '#6E9BFF', contains: '#4A505C', related: '#3A404A' },
         emphasisLabel: '#ffffff',
       }
     : {
@@ -71,13 +72,25 @@ const theme = computed(() =>
         tooltipBorder: '#e7e8ee',
         tooltipText: '#111318',
         label: '#3f4450',
+        labelDim: 'rgba(63,68,80,0.5)',
         nodeBorder: '#ffffff',
         nodeShadow: 'rgba(16,24,40,0.10)',
-        edgeSolid: '#aeb3c0',
-        edgeDashed: '#c9ccd6',
+        edges: { prerequisite: '#4C7DF0', contains: '#B4B9C6', related: '#CDD1DA' },
         emphasisLabel: '#111318',
       },
 )
+
+const masteryOf = (id: string): Mastery => (props.mastery ?? masteryMap)[id] ?? 'new'
+
+const focus = computed(() => {
+  if (!props.selectedId) return null
+  const ids = new Set<string>([props.selectedId])
+  for (const link of props.links) {
+    if (link.source === props.selectedId) ids.add(link.target)
+    if (link.target === props.selectedId) ids.add(link.source)
+  }
+  return ids
+})
 
 function buildOption() {
   const t = theme.value
@@ -103,6 +116,8 @@ function buildOption() {
         data: props.nodes.map((n, i) => {
           const fallbackAngle = (i / props.nodes.length) * Math.PI * 2 - Math.PI / 2
           const [x, y] = LAYOUT[n.id] ?? [Math.cos(fallbackAngle) * 260, Math.sin(fallbackAngle) * 170]
+          const active = !focus.value || focus.value.has(n.id)
+          const isSelected = n.id === props.selectedId
           return {
             id: n.id,
             name: n.name,
@@ -110,34 +125,45 @@ function buildOption() {
             category: n.category,
             x,
             y,
-            symbolSize: 11 + Math.sqrt(n.value) * 3.2,
+            symbolSize: 11 + Math.sqrt(n.value) * 3.2 + (isSelected ? 3 : 0),
             itemStyle: {
-              color: masteryPalette[masteryMap[n.id] ?? 'new'],
-              borderColor: t.nodeBorder,
-              borderWidth: 1.5,
-              shadowBlur: 6,
-              shadowColor: t.nodeShadow,
+              color: masteryPalette[masteryOf(n.id)],
+              borderColor: isSelected ? t.edges.prerequisite : t.nodeBorder,
+              borderWidth: isSelected ? 2.5 : 1.5,
+              shadowBlur: isSelected ? 14 : 6,
+              shadowColor: isSelected ? 'rgba(76,125,240,0.32)' : t.nodeShadow,
+              opacity: active ? 1 : 0.55,
             },
             label: {
               show: true,
               position: 'right',
-              distance: 5,
+              distance: 9,
               fontSize: 11,
-              color: t.label,
+              fontWeight: isSelected ? 600 : 400,
+              color: active ? t.label : t.labelDim,
             },
           }
         }),
-        links: props.links.map((l) => ({
-          source: l.source,
-          target: l.target,
-          lineStyle: {
-            color: l.kind === 'prerequisite' ? t.edgeSolid : t.edgeDashed,
-            width: l.kind === 'prerequisite' ? 1.5 : 1.1,
-            type: l.kind === 'contains' ? 'dashed' : l.kind === 'related' ? 'dotted' : 'solid',
-            curveness: 0.06,
-            opacity: 0.9,
-          },
-        })),
+        links: props.links.map((l) => {
+          const kind = l.kind === 'prerequisite' ? 'prerequisite' : l.kind === 'contains' ? 'contains' : 'related'
+          const adjacent = Boolean(
+            props.selectedId && (l.source === props.selectedId || l.target === props.selectedId),
+          )
+          const dimmed = Boolean(focus.value && !adjacent)
+          return {
+            source: l.source,
+            target: l.target,
+            symbol: kind === 'prerequisite' ? ['none', 'arrow'] : ['none', 'none'],
+            symbolSize: kind === 'prerequisite' ? 5 : 0,
+            lineStyle: {
+              color: t.edges[kind],
+              width: adjacent ? 2.2 : kind === 'prerequisite' ? 1.6 : 1.1,
+              type: kind === 'contains' ? 'dashed' : kind === 'related' ? 'dotted' : 'solid',
+              curveness: 0.06,
+              opacity: dimmed ? 0.22 : adjacent ? 1 : kind === 'related' ? 0.75 : 0.95,
+            },
+          }
+        }),
         lineStyle: { curveness: 0.06 },
         emphasis: {
           focus: 'none',
@@ -168,10 +194,7 @@ onMounted(() => {
 
 function highlightSelected() {
   if (!chart) return
-  chart.dispatchAction({ type: 'downplay', seriesIndex: 0 })
-  if (!props.selectedId) return
-  const index = props.nodes.findIndex((n) => n.id === props.selectedId)
-  if (index >= 0) chart.dispatchAction({ type: 'highlight', seriesIndex: 0, dataIndex: index })
+  chart.setOption(buildOption())
 }
 
 watch(

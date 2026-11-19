@@ -11,14 +11,16 @@ import {
   Sparkles,
   XCircle,
 } from 'lucide-vue-next'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 import { ApiError, api } from '@/api/client'
 import type { AttemptResult, PracticeQuestion } from '@/api/client'
 
 const COURSE_ID = 'course_cn'
+const route = useRoute()
 
 const chapters = ref<{ id: string; title: string }[]>([])
-const chapterId = ref('')
+const chapterId = ref(typeof route.query.chapter === 'string' ? route.query.chapter : '')
+const conceptId = ref(typeof route.query.concept === 'string' ? route.query.concept : '')
 const questions = ref<PracticeQuestion[]>([])
 const index = ref(0)
 const answers = reactive<Record<string, string>>({})
@@ -70,12 +72,20 @@ async function start() {
   for (const key of Object.keys(answers)) delete answers[key]
   for (const key of Object.keys(results)) delete results[key]
   try {
-    const query = chapterId.value ? `&chapter_id=${chapterId.value}` : ''
-    const result = await api.get<{ items: PracticeQuestion[] }>(
-      `/questions?limit=10&shuffle=true${query}`,
-    )
+    const params = ['limit=10', 'shuffle=true']
+    if (chapterId.value) params.push(`chapter_id=${chapterId.value}`)
+    if (conceptId.value) params.push(`concept_id=${conceptId.value}`)
+    const result = await api.get<{ items: PracticeQuestion[] }>(`/questions?${params.join('&')}`)
     questions.value = result.items
-    if (!result.items.length) notify('这个章节暂时没有题目')
+    if (!result.items.length && conceptId.value) {
+      conceptId.value = ''
+      notify('这个知识点暂无独立题目，已切到本章')
+      await start()
+      return
+    }
+    if (!result.items.length) {
+      notify(conceptId.value ? '这个知识点暂无独立题目，试试整个章节' : '这个章节暂时没有题目')
+    }
   } catch (error) {
     notify(error instanceof ApiError ? error.message : '组卷失败，请稍后再试')
   } finally {
@@ -168,10 +178,16 @@ onUnmounted(() => {
         </p>
       </div>
       <div class="flex flex-wrap items-center gap-1.5">
+        <span
+          v-if="conceptId"
+          class="rounded-full bg-brand-soft px-2.5 py-1 text-[10px] text-brand"
+        >
+          按知识点组卷
+        </span>
         <button
           class="rounded-full px-2.5 py-1 text-[10.5px] transition-colors"
           :class="chapterId === '' ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-subink'"
-          @click="chapterId = ''; start()"
+          @click="chapterId = ''; conceptId = ''; start()"
         >
           全部章节
         </button>
@@ -180,7 +196,7 @@ onUnmounted(() => {
           :key="chapter.id"
           class="rounded-full px-2.5 py-1 text-[10.5px] transition-colors"
           :class="chapterId === chapter.id ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-subink'"
-          @click="chapterId = chapter.id; start()"
+          @click="chapterId = chapter.id; conceptId = ''; start()"
         >
           {{ chapter.title }}
         </button>
