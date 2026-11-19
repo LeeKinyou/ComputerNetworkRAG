@@ -30,6 +30,18 @@ export interface AnalyticsOverview {
   documents: { count: number; chunks: number }
 }
 
+export interface AnalyticsConcept {
+  concept_id: string
+  title: string
+  chapter_id: string | null
+  attempts: number
+  correct: number
+  rate: number
+  students: number
+  weak_students: number
+  state: 'no_data' | 'weak' | 'normal' | 'mastered'
+}
+
 export interface PracticeOption {
   key: string
   text: string
@@ -44,6 +56,8 @@ export interface PracticeQuestion {
   stem: string
   options: PracticeOption[]
   difficulty: string
+  image_url?: string | null
+  reason?: string
 }
 
 export interface AttemptResult {

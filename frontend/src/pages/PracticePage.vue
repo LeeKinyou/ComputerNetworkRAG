@@ -29,6 +29,8 @@ const loading = ref(false)
 const submitting = ref(false)
 const finished = ref(false)
 const toast = ref('')
+const recommended = ref(false)
+const preview = ref('')
 const cumulative = ref<{ total: number; correct: number; rate: number } | null>(null)
 
 const current = computed(() => questions.value[index.value])
@@ -68,6 +70,7 @@ async function loadChapters() {
 async function start() {
   loading.value = true
   finished.value = false
+  recommended.value = false
   index.value = 0
   for (const key of Object.keys(answers)) delete answers[key]
   for (const key of Object.keys(results)) delete results[key]
@@ -96,6 +99,28 @@ async function start() {
 function choose(key: string) {
   if (!current.value || currentResult.value) return
   answers[current.value.id] = key
+}
+
+async function recommend() {
+  loading.value = true
+  finished.value = false
+  index.value = 0
+  chapterId.value = ''
+  conceptId.value = ''
+  for (const key of Object.keys(answers)) delete answers[key]
+  for (const key of Object.keys(results)) delete results[key]
+  try {
+    const result = await api.get<{ items: PracticeQuestion[] }>(
+      '/questions/recommended?user_key=demo_user&limit=10',
+    )
+    questions.value = result.items
+    recommended.value = true
+    if (!result.items.length) notify('暂时没有可推荐的题目')
+  } catch (error) {
+    notify(error instanceof ApiError ? error.message : '推荐失败，请稍后再试')
+  } finally {
+    loading.value = false
+  }
 }
 
 async function submit() {
@@ -179,14 +204,20 @@ onUnmounted(() => {
       </div>
       <div class="flex flex-wrap items-center gap-1.5">
         <span
-          v-if="conceptId"
+          v-if="recommended"
+          class="rounded-full bg-[#FFF3E2] px-2.5 py-1 text-[10px] text-[#8A6A32]"
+        >
+          为你推荐
+        </span>
+        <span
+          v-else-if="conceptId"
           class="rounded-full bg-brand-soft px-2.5 py-1 text-[10px] text-brand"
         >
           按知识点组卷
         </span>
         <button
           class="rounded-full px-2.5 py-1 text-[10.5px] transition-colors"
-          :class="chapterId === '' ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-subink'"
+          :class="chapterId === '' && !recommended ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-subink'"
           @click="chapterId = ''; conceptId = ''; start()"
         >
           全部章节
@@ -199,6 +230,12 @@ onUnmounted(() => {
           @click="chapterId = chapter.id; conceptId = ''; start()"
         >
           {{ chapter.title }}
+        </button>
+        <button
+          class="rounded-full border border-line px-2.5 py-1 text-[10.5px] text-subink transition-colors hover:border-line-strong hover:text-ink"
+          @click="recommend"
+        >
+          为我推荐
         </button>
       </div>
     </div>
@@ -323,9 +360,25 @@ onUnmounted(() => {
         </div>
 
         <div v-else class="flex flex-1 flex-col p-5">
+          <p v-if="recommended && current?.reason" class="mb-2 text-[10.5px] text-brand">
+            {{ current.reason }}
+          </p>
           <p class="text-[15px] font-medium leading-[1.75] tracking-[-0.01em] text-ink">
             {{ current?.stem }}
           </p>
+
+          <button
+            v-if="current?.image_url"
+            class="mt-3 block w-full cursor-zoom-in"
+            type="button"
+            @click="preview = current.image_url ?? ''"
+          >
+            <img
+              :src="current.image_url"
+              alt="题目配图：点击放大"
+              class="w-full rounded-[12px] border border-line bg-surface"
+            />
+          </button>
 
           <div class="mt-4 flex flex-col gap-2">
             <button
@@ -471,5 +524,13 @@ onUnmounted(() => {
     >
       {{ toast }}
     </div>
+  </div>
+
+  <div
+    v-if="preview"
+    class="fixed inset-0 z-[60] flex cursor-zoom-out items-center justify-center bg-black/65 p-8"
+    @click="preview = ''"
+  >
+    <img :src="preview" alt="题目配图" class="max-h-full max-w-full rounded-[16px] bg-surface shadow-2xl" />
   </div>
 </template>
