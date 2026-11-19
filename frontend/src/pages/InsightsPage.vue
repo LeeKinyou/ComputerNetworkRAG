@@ -10,12 +10,15 @@ import {
   Target,
 } from 'lucide-vue-next'
 import { api } from '@/api/client'
-import type { AnalyticsOverview } from '@/api/client'
+import type { AnalyticsConcept, AnalyticsOverview } from '@/api/client'
 import { insights } from '@/mock/workbench'
 
 const range = ref<'week' | 'month'>('week')
 const toast = ref('')
 const stats = ref<AnalyticsOverview | null>(null)
+const concepts = ref<AnalyticsConcept[]>([])
+const conceptTotal = ref(0)
+const conceptCovered = ref(0)
 
 onMounted(async () => {
   try {
@@ -23,7 +26,26 @@ onMounted(async () => {
   } catch {
     stats.value = null
   }
+  try {
+    const result = await api.get<{
+      items: AnalyticsConcept[]
+      total_concepts: number
+      covered_concepts: number
+    }>('/analytics/concepts')
+    concepts.value = result.items
+    conceptTotal.value = result.total_concepts
+    conceptCovered.value = result.covered_concepts
+  } catch {
+    concepts.value = []
+  }
 })
+
+function conceptTone(state: AnalyticsConcept['state']) {
+  if (state === 'weak') return 'bg-[#E8A23C]/80'
+  if (state === 'normal') return 'bg-brand/70'
+  if (state === 'mastered') return 'bg-success/70'
+  return 'bg-tint'
+}
 
 const weeklyQuestions = computed(() => stats.value?.questions_week ?? insights.weeklyQuestions)
 const modeLine = computed(() => {
@@ -142,6 +164,53 @@ function act(text: string) {
               </div>
             </div>
           </div>
+        </section>
+
+        <section class="surface overflow-hidden">
+          <header class="flex items-center justify-between border-b border-line px-5 py-3.5">
+            <div class="flex items-center gap-2">
+              <BarChart3 :size="14" class="text-muted" />
+              <h2 class="text-[12.5px] font-medium">概念掌握</h2>
+            </div>
+            <span class="text-[9.5px] text-muted">
+              已覆盖 {{ conceptCovered }} / {{ conceptTotal }} 个知识点
+            </span>
+          </header>
+          <div v-if="concepts.length" class="grid gap-x-7 gap-y-3 p-5 md:grid-cols-2">
+            <div v-for="concept in concepts" :key="concept.concept_id">
+              <div class="flex items-center justify-between text-[10.5px]">
+                <span class="truncate text-subink">{{ concept.title }}</span>
+                <span
+                  class="ml-2 shrink-0 font-mono text-[9.5px]"
+                  :class="
+                    concept.state === 'weak'
+                      ? 'text-[#B9761D]'
+                      : concept.state === 'mastered'
+                        ? 'text-success'
+                        : 'text-muted'
+                  "
+                >
+                  {{ concept.attempts ? concept.rate + '%' : '未练' }}
+                </span>
+              </div>
+              <div class="mt-1.5 h-[3px] overflow-hidden rounded-full bg-tint">
+                <div
+                  class="h-full rounded-full"
+                  :class="conceptTone(concept.state)"
+                  :style="{ width: concept.attempts ? concept.rate + '%' : '0%' }"
+                />
+              </div>
+              <p class="mt-1 text-[9px] text-muted">
+                {{ concept.attempts }} 次作答 · {{ concept.students }} 人
+                <span v-if="concept.weak_students" class="text-[#B9761D]">
+                  · {{ concept.weak_students }} 人薄弱
+                </span>
+              </p>
+            </div>
+          </div>
+          <p v-else class="px-5 py-8 text-center text-[11px] text-muted">
+            还没有作答记录，学生练几题后这里会出现真实的概念掌握分布。
+          </p>
         </section>
 
         <section class="surface overflow-hidden">
