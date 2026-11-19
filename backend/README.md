@@ -62,7 +62,7 @@ Embedding 是可选通道，默认关闭：
 | GET | `/api/v2/runs/{id}/events` | SSE：计划、工具调用、观察、token、审批、终态 |
 | POST | `/api/v2/runs/{id}/inputs` | 审批结果，恢复被中断的运行 |
 | GET | `/api/v2/analytics/overview` | 课程使用统计：提问量、完成率、章节关注度、高频问题 |
-| GET | `/api/v2/questions` | 按章节取练习题目（默认随机 10 题，不下发答案） |
+| GET | `/api/v2/questions` | 组卷：支持 `chapter_id`、`concept_id` 过滤（默认随机 10 题，不下发答案） |
 | POST | `/api/v2/practice/attempts` | 提交作答，即时判分并返回正确答案、解析与出处 |
 | GET | `/api/v2/practice/attempts` | 作答历史（题干、对错、时间） |
 | GET | `/api/v2/practice/stats` | 练习统计：总正确率、按章节正确率、错题次数排行 |
