@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import settings
@@ -43,7 +44,18 @@ SessionFactory = async_sessionmaker(engine, expire_on_commit=False, class_=Async
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_ensure_columns)
     await seed_if_empty()
+
+
+def _ensure_columns(connection) -> None:
+    """轻量迁移：create_all 不会给已有表补列，旧演示库在这里就地补齐。"""
+    inspector = inspect(connection)
+    if "questions" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("questions")}
+    if "image_url" not in columns:
+        connection.execute(text("ALTER TABLE questions ADD COLUMN image_url VARCHAR(300)"))
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:

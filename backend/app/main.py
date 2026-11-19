@@ -85,6 +85,10 @@ app.include_router(router)
 if (STATIC_DIR / "assets").exists():
     app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
 
+MEDIA_DIR = STATIC_DIR.parent / "media"
+if MEDIA_DIR.exists():
+    app.mount("/media", StaticFiles(directory=MEDIA_DIR), name="media")
+
 
 @app.get("/")
 async def index() -> FileResponse:

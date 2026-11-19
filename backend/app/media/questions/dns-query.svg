@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="340" viewBox="0 0 760 340" font-family="system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <rect width="760" height="340" fill="#FFFFFF"/>
+  <text x="40" y="45" font-size="15" font-weight="600" fill="#1F2430">DNS 递归查询与迭代查询</text>
+  <text x="40" y="66" font-size="11" fill="#7A8394">主机 → 本地 DNS 是递归；本地 DNS → 根 / 顶级 / 权威 通常是迭代</text>
+
+  <rect x="45" y="140" width="130" height="60" rx="10" fill="#F8FAFE" stroke="#D6DEEF"/>
+  <text x="110" y="166" font-size="11" font-weight="600" fill="#1F2430" text-anchor="middle">主机</text>
+  <text x="110" y="184" font-size="9.5" fill="#7A8394" text-anchor="middle">stub resolver</text>
+
+  <rect x="240" y="130" width="150" height="80" rx="10" fill="#F4F7FF" stroke="#C9D6F2" stroke-width="1.5"/>
+  <text x="315" y="156" font-size="11" font-weight="600" fill="#2F4D8F" text-anchor="middle">本地 DNS</text>
+  <text x="315" y="174" font-size="9.5" fill="#7A8394" text-anchor="middle">运营商 / 企业递归解析器</text>
+  <text x="315" y="192" font-size="9.5" fill="#7A8394" text-anchor="middle">带缓存</text>
+
+  <rect x="520" y="76" width="180" height="50" rx="9" fill="#F8FAFE" stroke="#D6DEEF"/>
+  <text x="610" y="106" font-size="10.5" fill="#3C4454" text-anchor="middle">根域名服务器</text>
+
+  <rect x="520" y="150" width="180" height="50" rx="9" fill="#F8FAFE" stroke="#D6DEEF"/>
+  <text x="610" y="180" font-size="10.5" fill="#3C4454" text-anchor="middle">顶级域服务器（.com）</text>
+
+  <rect x="520" y="224" width="180" height="50" rx="9" fill="#F8FAFE" stroke="#D6DEEF"/>
+  <text x="610" y="254" font-size="10.5" fill="#3C4454" text-anchor="middle">权威服务器</text>
+
+  <defs>
+    <marker id="arrowRec" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 Z" fill="#3A6BE0"/>
+    </marker>
+    <marker id="arrowIter" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 Z" fill="#8A93A4"/>
+    </marker>
+  </defs>
+
+  <line x1="175" y1="170" x2="236" y2="170" stroke="#3A6BE0" stroke-width="2" marker-end="url(#arrowRec)"/>
+  <text x="205" y="160" font-size="9.5" fill="#3A6BE0" text-anchor="middle">递归</text>
+
+  <line x1="390" y1="146" x2="516" y2="101" stroke="#8A93A4" stroke-width="1.6" marker-end="url(#arrowIter)"/>
+  <text x="440" y="116" font-size="9" fill="#59627A">① 问根</text>
+
+  <line x1="390" y1="170" x2="516" y2="175" stroke="#8A93A4" stroke-width="1.6" marker-end="url(#arrowIter)"/>
+  <text x="440" y="164" font-size="9" fill="#59627A">② 问 .com</text>
+
+  <line x1="390" y1="196" x2="516" y2="243" stroke="#8A93A4" stroke-width="1.6" marker-end="url(#arrowIter)"/>
+  <text x="440" y="230" font-size="9" fill="#59627A">③ 问权威</text>
+
+  <text x="430" y="286" font-size="9.5" fill="#7A8394">每一跳只返回“下一台该问谁”，由本地 DNS 继续追查</text>
+  <text x="66" y="318" font-size="10" fill="#8A6A32">递归：你帮我查到底并给最终答案；迭代：告诉我下一跳，我自己继续问。</text>
+</svg>

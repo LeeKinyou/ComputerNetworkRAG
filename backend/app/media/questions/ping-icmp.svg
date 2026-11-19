@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="340" viewBox="0 0 760 340" font-family="system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <rect width="760" height="340" fill="#FFFFFF"/>
+  <text x="40" y="45" font-size="15" font-weight="600" fill="#1F2430">ping 使用的 ICMP 报文</text>
+  <text x="40" y="66" font-size="11" fill="#7A8394">ICMP 报文封装在 IP 数据报中，用于传递控制信息与差错报告</text>
+
+  <rect x="45" y="110" width="150" height="76" rx="12" fill="#F8FAFE" stroke="#D6DEEF"/>
+  <text x="120" y="140" font-size="12" font-weight="600" fill="#1F2430" text-anchor="middle">主机 A</text>
+  <text x="120" y="160" font-size="10" fill="#7A8394" text-anchor="middle">192.168.1.10</text>
+
+  <rect x="565" y="110" width="150" height="76" rx="12" fill="#F8FAFE" stroke="#D6DEEF"/>
+  <text x="640" y="140" font-size="12" font-weight="600" fill="#1F2430" text-anchor="middle">主机 B</text>
+  <text x="640" y="160" font-size="10" fill="#7A8394" text-anchor="middle">192.168.1.20</text>
+
+  <defs>
+    <marker id="arrowReq" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 Z" fill="#3A6BE0"/>
+    </marker>
+    <marker id="arrowRep" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 Z" fill="#2E9E6B"/>
+    </marker>
+  </defs>
+
+  <line x1="195" y1="126" x2="565" y2="126" stroke="#3A6BE0" stroke-width="2" marker-end="url(#arrowReq)"/>
+  <text x="380" y="116" font-size="11" fill="#3A6BE0" text-anchor="middle">Echo Request　Type 8　Code 0</text>
+
+  <line x1="565" y1="170" x2="195" y2="170" stroke="#2E9E6B" stroke-width="2" marker-end="url(#arrowRep)"/>
+  <text x="380" y="190" font-size="11" fill="#2E9E6B" text-anchor="middle">Echo Reply　Type 0　Code 0</text>
+
+  <rect x="45" y="216" width="670" height="102" rx="12" fill="#F8FAFE" stroke="#DCE3F1"/>
+  <text x="66" y="240" font-size="11" font-weight="600" fill="#1F2430">常见 ICMP 类型</text>
+  <text x="66" y="262" font-size="10.5" fill="#4A5364">Type 8 / 0：回显请求与应答（ping）；Type 3：目的不可达（端口/主机/网络不可达）</text>
+  <text x="66" y="282" font-size="10.5" fill="#4A5364">Type 11：超时（TTL 耗尽，traceroute 依赖它）；Type 5：重定向（提示更优下一跳）</text>
+  <text x="66" y="302" font-size="10.5" fill="#8A6A32">注意：ping 通只说明 ICMP 可达，不代表目标端口上的服务可用。</text>
+</svg>

@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="340" viewBox="0 0 760 340" font-family="system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <rect width="760" height="340" fill="#FFFFFF"/>
+  <text x="40" y="45" font-size="15" font-weight="600" fill="#1F2430">NAPT：多台内网主机共享一个公网地址</text>
+  <text x="40" y="66" font-size="11" fill="#7A8394">NAT 设备维护「内网 IP:端口 ↔ 公网 IP:端口」映射表，用端口区分会话</text>
+
+  <rect x="45" y="100" width="170" height="56" rx="10" fill="#F8FAFE" stroke="#D6DEEF"/>
+  <text x="130" y="122" font-size="10.5" fill="#1F2430" text-anchor="middle">内网主机 A</text>
+  <text x="130" y="142" font-size="9.5" fill="#7A8394" text-anchor="middle">192.168.1.2:5000</text>
+
+  <rect x="45" y="172" width="170" height="56" rx="10" fill="#F8FAFE" stroke="#D6DEEF"/>
+  <text x="130" y="194" font-size="10.5" fill="#1F2430" text-anchor="middle">内网主机 B</text>
+  <text x="130" y="214" font-size="9.5" fill="#7A8394" text-anchor="middle">192.168.1.3:5000</text>
+
+  <defs>
+    <marker id="arrowNat" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 Z" fill="#3A6BE0"/>
+    </marker>
+  </defs>
+  <line x1="215" y1="128" x2="300" y2="128" stroke="#3A6BE0" stroke-width="2" marker-end="url(#arrowNat)"/>
+  <line x1="215" y1="200" x2="300" y2="200" stroke="#3A6BE0" stroke-width="2" marker-end="url(#arrowNat)"/>
+  <line x1="470" y1="164" x2="560" y2="164" stroke="#3A6BE0" stroke-width="2" marker-end="url(#arrowNat)"/>
+
+  <rect x="300" y="86" width="170" height="176" rx="12" fill="#F4F7FF" stroke="#C9D6F2" stroke-width="1.5"/>
+  <text x="385" y="110" font-size="11.5" font-weight="600" fill="#2F4D8F" text-anchor="middle">NAT / NAPT</text>
+
+  <rect x="314" y="124" width="142" height="52" rx="8" fill="#FFFFFF" stroke="#DCE3F1"/>
+  <text x="322" y="142" font-size="9" fill="#59627A">192.168.1.2:5000</text>
+  <text x="322" y="160" font-size="9" fill="#3A6BE0">203.0.113.5:40001</text>
+
+  <rect x="314" y="182" width="142" height="52" rx="8" fill="#FFFFFF" stroke="#DCE3F1"/>
+  <text x="322" y="200" font-size="9" fill="#59627A">192.168.1.3:5000</text>
+  <text x="322" y="218" font-size="9" fill="#3A6BE0">203.0.113.5:40002</text>
+
+  <rect x="560" y="136" width="150" height="56" rx="10" fill="#EAF7F0" stroke="#BFE0CE"/>
+  <text x="635" y="158" font-size="10.5" fill="#2E7A55" text-anchor="middle">公网服务器</text>
+  <text x="635" y="178" font-size="9.5" fill="#5F7F6C" text-anchor="middle">93.184.216.34:443</text>
+
+  <rect x="45" y="282" width="670" height="40" rx="10" fill="#FFF8EC" stroke="#EAD3B0"/>
+  <text x="66" y="307" font-size="10.5" fill="#8A6A32">两台主机恰好都用了源端口 5000，但被映射成 40001 / 40002，因此公网侧仍能区分两条连接。</text>
+</svg>

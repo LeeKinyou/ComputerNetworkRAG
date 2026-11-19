@@ -153,6 +153,7 @@ class Question(Base):
     explanation: Mapped[str] = mapped_column(Text, default="")
     source: Mapped[str] = mapped_column(String(200), default="")
     difficulty: Mapped[str] = mapped_column(String(16), default="medium")  # easy / medium / hard
+    image_url: Mapped[str | None] = mapped_column(String(300), nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
 
 

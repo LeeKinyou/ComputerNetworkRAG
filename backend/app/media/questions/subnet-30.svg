@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="340" viewBox="0 0 760 340" font-family="system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <rect width="760" height="340" fill="#FFFFFF"/>
+  <text x="40" y="45" font-size="15" font-weight="600" fill="#1F2430">192.168.1.4/30 的地址划分</text>
+  <text x="40" y="66" font-size="11" fill="#7A8394">/30 掩码 255.255.255.252，块大小 4，每个子网只有 2 个可用主机地址</text>
+
+  <g font-size="11" text-anchor="middle">
+    <rect x="45" y="96" width="120" height="52" fill="#F1F3F6" stroke="#D6DCE8"/>
+    <text x="105" y="118" fill="#59627A">192.168.1.0</text>
+    <text x="105" y="136" font-size="10" fill="#8A93A4">网络地址</text>
+
+    <rect x="165" y="96" width="120" height="52" fill="#F1F3F6" stroke="#D6DCE8"/>
+    <text x="225" y="118" fill="#59627A">192.168.1.1</text>
+    <text x="225" y="136" font-size="10" fill="#8A93A4">可用（.0/30）</text>
+
+    <rect x="285" y="96" width="120" height="52" fill="#F1F3F6" stroke="#D6DCE8"/>
+    <text x="345" y="118" fill="#59627A">192.168.1.2</text>
+    <text x="345" y="136" font-size="10" fill="#8A93A4">可用（.0/30）</text>
+
+    <rect x="405" y="96" width="120" height="52" fill="#F1F3F6" stroke="#D6DCE8"/>
+    <text x="465" y="118" fill="#59627A">192.168.1.3</text>
+    <text x="465" y="136" font-size="10" fill="#8A93A4">广播（.0/30）</text>
+  </g>
+
+  <rect x="525" y="86" width="190" height="172" rx="12" fill="#F8FAFE" stroke="#C9D6F2" stroke-width="1.5"/>
+  <text x="620" y="110" font-size="12" font-weight="600" fill="#2F4D8F" text-anchor="middle">192.168.1.4/30</text>
+
+  <rect x="543" y="126" width="154" height="34" fill="#F1F3F6" stroke="#D6DCE8"/>
+  <text x="556" y="148" font-size="10" fill="#59627A">.4</text>
+  <text x="620" y="148" font-size="10" fill="#8A93A4" text-anchor="middle">网络地址（不可用）</text>
+
+  <rect x="543" y="160" width="154" height="34" fill="#EAF7F0" stroke="#BFE0CE"/>
+  <text x="556" y="182" font-size="10" fill="#2E7A55">.5</text>
+  <text x="650" y="182" font-size="10" fill="#2E7A55" text-anchor="end">可用主机</text>
+
+  <rect x="543" y="194" width="154" height="34" fill="#EAF7F0" stroke="#BFE0CE"/>
+  <text x="556" y="216" font-size="10" fill="#2E7A55">.6</text>
+  <text x="650" y="216" font-size="10" fill="#2E7A55" text-anchor="end">可用主机</text>
+
+  <rect x="543" y="228" width="154" height="28" fill="#FFF3E2" stroke="#EAD3B0"/>
+  <text x="556" y="247" font-size="10" fill="#8A6A32">.7</text>
+  <text x="650" y="247" font-size="10" fill="#8A6A32" text-anchor="end">广播地址</text>
+
+  <rect x="45" y="282" width="670" height="36" rx="10" fill="#F8FAFE" stroke="#DCE3F1"/>
+  <text x="66" y="305" font-size="11" fill="#4A5364">主机地址数 = 2^(32-30) - 2 = 2，即 .5 和 .6；.4 与 .7 分别留给网络号与广播。</text>
+</svg>

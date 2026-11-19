@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="340" viewBox="0 0 760 340" font-family="system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <rect width="760" height="340" fill="#FFFFFF"/>
+  <text x="40" y="45" font-size="15" font-weight="600" fill="#1F2430">TCP 三次握手</text>
+  <text x="40" y="66" font-size="11" fill="#7A8394">SYN 与 FIN 各消耗一个序号；纯 ACK 不消耗序号</text>
+
+  <line x1="200" y1="90" x2="200" y2="282" stroke="#D6DEEF" stroke-width="1.5"/>
+  <line x1="560" y1="90" x2="560" y2="282" stroke="#D6DEEF" stroke-width="1.5"/>
+  <text x="200" y="82" font-size="11" font-weight="600" fill="#2F4D8F" text-anchor="middle">客户端</text>
+  <text x="560" y="82" font-size="11" font-weight="600" fill="#2F4D8F" text-anchor="middle">服务器</text>
+
+  <defs>
+    <marker id="arrowC2S" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 Z" fill="#3A6BE0"/>
+    </marker>
+    <marker id="arrowS2C" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 Z" fill="#2E9E6B"/>
+    </marker>
+  </defs>
+
+  <line x1="200" y1="112" x2="560" y2="112" stroke="#3A6BE0" stroke-width="2" marker-end="url(#arrowC2S)"/>
+  <text x="380" y="104" font-size="11" fill="#3A6BE0" text-anchor="middle">① SYN=1, seq=x</text>
+  <text x="380" y="130" font-size="9.5" fill="#8A93A4" text-anchor="middle">客户端进入 SYN_SENT，SYN 占 1 个序号</text>
+
+  <line x1="560" y1="166" x2="200" y2="166" stroke="#2E9E6B" stroke-width="2" marker-end="url(#arrowS2C)"/>
+  <text x="380" y="158" font-size="11" fill="#2E9E6B" text-anchor="middle">② SYN=1, ACK=1, seq=y, ack=x+1</text>
+  <text x="380" y="184" font-size="9.5" fill="#8A93A4" text-anchor="middle">服务器进入 SYN_RCVD，SYN 同样占 1 个序号</text>
+
+  <line x1="200" y1="220" x2="560" y2="220" stroke="#3A6BE0" stroke-width="2" marker-end="url(#arrowC2S)"/>
+  <text x="380" y="212" font-size="11" fill="#3A6BE0" text-anchor="middle">③ ACK=1, seq=x+1, ack=y+1</text>
+  <text x="380" y="238" font-size="9.5" fill="#8A93A4" text-anchor="middle">连接建立，第三次握手可以携带数据</text>
+
+  <rect x="45" y="292" width="670" height="36" rx="10" fill="#F8FAFE" stroke="#DCE3F1"/>
+  <text x="66" y="315" font-size="10.5" fill="#4A5364">为什么是三次而不是两次：两次无法让服务器确认“客户端已收到我的 SYN”，也无法可靠同步双方初始序号。</text>
+</svg>

@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="340" viewBox="0 0 760 340" font-family="system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <rect width="760" height="340" fill="#FFFFFF"/>
+  <text x="40" y="45" font-size="15" font-weight="600" fill="#1F2430">四条 /24 路由能否聚合？</text>
+  <text x="40" y="66" font-size="11" fill="#7A8394">聚合要求：网段连续，且起始地址对齐到聚合后的块大小</text>
+
+  <g font-size="11" text-anchor="middle">
+    <rect x="45" y="100" width="120" height="40" rx="8" fill="#EAF0FE" stroke="#C7D3EE"/>
+    <text x="105" y="125" fill="#2F4D8F">192.168.4.0/24</text>
+    <rect x="45" y="150" width="120" height="40" rx="8" fill="#EAF0FE" stroke="#C7D3EE"/>
+    <text x="105" y="175" fill="#2F4D8F">192.168.5.0/24</text>
+    <rect x="45" y="200" width="120" height="40" rx="8" fill="#EAF0FE" stroke="#C7D3EE"/>
+    <text x="105" y="225" fill="#2F4D8F">192.168.6.0/24</text>
+    <rect x="45" y="250" width="120" height="40" rx="8" fill="#EAF0FE" stroke="#C7D3EE"/>
+    <text x="105" y="275" fill="#2F4D8F">192.168.7.0/24</text>
+  </g>
+
+  <defs>
+    <marker id="arrowAgg" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 Z" fill="#8A93A4"/>
+    </marker>
+  </defs>
+  <path d="M175,120 C220,120 220,180 255,180" stroke="#8A93A4" stroke-width="1.5" fill="none" marker-end="url(#arrowAgg)"/>
+  <path d="M175,170 C220,170 220,180 255,180" stroke="#8A93A4" stroke-width="1.5" fill="none"/>
+  <path d="M175,220 C220,220 220,190 255,190" stroke="#8A93A4" stroke-width="1.5" fill="none"/>
+  <path d="M175,270 C220,270 220,190 255,190" stroke="#8A93A4" stroke-width="1.5" fill="none"/>
+
+  <rect x="262" y="152" width="196" height="76" rx="12" fill="#EAF7F0" stroke="#BFE0CE" stroke-width="1.5"/>
+  <text x="360" y="178" font-size="13" font-weight="600" fill="#2E7A55" text-anchor="middle">192.168.4.0/22</text>
+  <text x="360" y="198" font-size="10" fill="#5F7F6C" text-anchor="middle">覆盖 .4.0 ~ .7.255</text>
+  <text x="360" y="214" font-size="10" fill="#5F7F6C" text-anchor="middle">1024 个地址</text>
+
+  <rect x="500" y="92" width="215" height="196" rx="12" fill="#F8FAFE" stroke="#DCE3F1"/>
+  <text x="518" y="116" font-size="11" font-weight="600" fill="#1F2430">第三字节的二进制</text>
+  <text x="518" y="142" font-size="10" fill="#59627A">0000 0100 → .4</text>
+  <text x="518" y="162" font-size="10" fill="#59627A">0000 0101 → .5</text>
+  <text x="518" y="182" font-size="10" fill="#59627A">0000 0110 → .6</text>
+  <text x="518" y="202" font-size="10" fill="#59627A">0000 0111 → .7</text>
+  <line x1="518" y1="216" x2="697" y2="216" stroke="#DCE3F1"/>
+  <text x="518" y="238" font-size="10" fill="#3A6BE0">公共前缀：0000 01xx</text>
+  <text x="518" y="258" font-size="10" fill="#3A6BE0">前 22 位相同 → /22</text>
+
+  <rect x="45" y="300" width="670" height="28" rx="8" fill="#FFF8EC" stroke="#EAD3B0"/>
+  <text x="62" y="318" font-size="10" fill="#8A6A32">若只聚合 .4/.5 两条，块大小为 2，得到 192.168.4.0/23。</text>
+</svg>

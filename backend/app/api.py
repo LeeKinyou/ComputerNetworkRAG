@@ -576,6 +576,7 @@ def _question_public(question: Question, chapter_title: str = "") -> dict:
         "stem": question.stem,
         "options": question.options,
         "difficulty": question.difficulty,
+        "image_url": question.image_url,
     }
 
 
@@ -585,7 +586,7 @@ async def list_questions(
     course_id: str = COURSE_ID,
     chapter_id: str | None = None,
     concept_id: str | None = None,
-    limit: int = Query(10, ge=1, le=30),
+    limit: int = Query(10, ge=1, le=100),
     shuffle: bool = True,
 ) -> dict:
     stmt = select(Question).where(Question.course_id == course_id)
@@ -606,6 +607,154 @@ async def list_questions(
         "course_id": course_id,
         "total": len(questions),
         "items": [_question_public(question, titles.get(question.chapter_id, "")) for question in questions],
+    }
+
+
+@router.get("/questions/recommended")
+async def recommended_questions(
+    session: SessionDep,
+    course_id: str = COURSE_ID,
+    user_key: str = "demo_user",
+    limit: int = Query(10, ge=1, le=30),
+) -> dict:
+    """按掌握度组卷：未练过的知识点优先，其次正确率偏低的概念，并给出推荐理由。"""
+    questions = (
+        await session.execute(select(Question).where(Question.course_id == course_id))
+    ).scalars().all()
+    attempts = (
+        await session.execute(
+            select(Attempt).where(Attempt.course_id == course_id, Attempt.user_key == user_key)
+        )
+    ).scalars().all()
+    concepts = (await session.execute(select(Concept).where(Concept.course_id == course_id))).scalars().all()
+    chapters = (await session.execute(select(Chapter).where(Chapter.course_id == course_id))).scalars().all()
+    concept_titles = {concept.id: concept.title for concept in concepts}
+    chapter_titles = {chapter.id: chapter.title for chapter in chapters}
+
+    concept_stats: dict[str, dict[str, int]] = {}
+    answered: set[str] = set()
+    by_id = {question.id: question for question in questions}
+    for attempt in attempts:
+        answered.add(attempt.question_id)
+        concept_id = by_id[attempt.question_id].concept_id if attempt.question_id in by_id else None
+        if not concept_id:
+            continue
+        bucket = concept_stats.setdefault(concept_id, {"total": 0, "correct": 0})
+        bucket["total"] += 1
+        if attempt.is_correct:
+            bucket["correct"] += 1
+
+    def rank(question: Question) -> tuple[int, int, float]:
+        stat = concept_stats.get(question.concept_id) if question.concept_id else None
+        if not stat:
+            priority = 0
+        else:
+            rate = stat["correct"] / stat["total"]
+            priority = 1 if rate < 0.6 else 2 if rate < 0.8 else 3
+        return (priority, 0 if question.id not in answered else 1, random.random())
+
+    items: list[dict] = []
+    for question in sorted(questions, key=rank)[:limit]:
+        stat = concept_stats.get(question.concept_id) if question.concept_id else None
+        title = concept_titles.get(question.concept_id or "", question.concept_id or "相关知识点")
+        if not stat:
+            reason = f"还没练过「{title}」" if question.concept_id else "换个章节的题试试"
+        else:
+            rate = round(stat["correct"] / stat["total"] * 100)
+            if rate < 60:
+                reason = f"「{title}」正确率 {rate}%，优先巩固"
+            elif rate < 80:
+                reason = f"「{title}」正确率 {rate}%，再练一轮"
+            else:
+                reason = f"「{title}」已掌握，换个角度检验"
+        payload = _question_public(question, chapter_titles.get(question.chapter_id, ""))
+        payload["reason"] = reason
+        items.append(payload)
+    return {"course_id": course_id, "total": len(items), "items": items}
+
+
+@router.get("/analytics/concepts")
+async def analytics_concepts(
+    session: SessionDep,
+    course_id: str = COURSE_ID,
+    user_key: str | None = None,
+) -> dict:
+    """概念粒度学情：教师端看全班掌握分布，学生端可只看自己。"""
+    concepts = (await session.execute(select(Concept).where(Concept.course_id == course_id))).scalars().all()
+    questions = (
+        await session.execute(select(Question).where(Question.course_id == course_id))
+    ).scalars().all()
+    stmt = select(Attempt).where(Attempt.course_id == course_id)
+    if user_key:
+        stmt = stmt.where(Attempt.user_key == user_key)
+    attempts = (await session.execute(stmt)).scalars().all()
+    by_id = {question.id: question for question in questions}
+
+    buckets: dict[str, dict[str, object]] = {}
+    for attempt in attempts:
+        question = by_id.get(attempt.question_id)
+        concept_id = question.concept_id if question else None
+        if not concept_id:
+            continue
+        bucket = buckets.setdefault(concept_id, {"total": 0, "correct": 0, "students": set(), "weak": set()})
+        bucket["total"] = int(bucket["total"]) + 1  # type: ignore[arg-type]
+        if attempt.is_correct:
+            bucket["correct"] = int(bucket["correct"]) + 1  # type: ignore[arg-type]
+        students = bucket["students"]
+        if isinstance(students, set):
+            students.add(attempt.user_key)
+
+    # 同一学生同一概念的正确率，用来判断“薄弱学生”人数
+    per_student: dict[tuple[str, str], list[int]] = {}
+    for attempt in attempts:
+        question = by_id.get(attempt.question_id)
+        if not question or not question.concept_id:
+            continue
+        key = (attempt.user_key, question.concept_id)
+        pair = per_student.setdefault(key, [0, 0])
+        pair[0] += 1
+        if attempt.is_correct:
+            pair[1] += 1
+
+    items = []
+    for concept in concepts:
+        bucket = buckets.get(concept.id, {"total": 0, "correct": 0, "students": set()})
+        total = int(bucket["total"])  # type: ignore[arg-type]
+        correct = int(bucket["correct"])  # type: ignore[arg-type]
+        students = bucket["students"]
+        weak_students = sum(
+            1
+            for (owner, concept_id), (attempts_count, correct_count) in per_student.items()
+            if concept_id == concept.id and attempts_count and correct_count / attempts_count < 0.6
+        )
+        rate = round(correct / total * 100) if total else 0
+        if not total:
+            state = "no_data"
+        elif rate < 60:
+            state = "weak"
+        elif rate < 80:
+            state = "normal"
+        else:
+            state = "mastered"
+        items.append(
+            {
+                "concept_id": concept.id,
+                "title": concept.title,
+                "chapter_id": concept.chapter_id,
+                "attempts": total,
+                "correct": correct,
+                "rate": rate,
+                "students": len(students) if isinstance(students, set) else 0,
+                "weak_students": weak_students,
+                "state": state,
+            }
+        )
+    items.sort(key=lambda item: (-item["attempts"], item["concept_id"]))
+    return {
+        "course_id": course_id,
+        "total_concepts": len(items),
+        "covered_concepts": sum(1 for item in items if item["attempts"]),
+        "items": items,
     }
 
 
