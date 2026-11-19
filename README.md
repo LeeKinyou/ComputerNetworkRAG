@@ -29,7 +29,7 @@
 | 后端 | Python 3.12（uv 管理）+ FastAPI + SQLAlchemy async + Pydantic Settings |
 | Agent | LangGraph 1.x 显式状态图；`AsyncSqliteSaver` 持久化审批检查点 |
 | 存储 | SQLite（`runtime/app.db` 业务库、`runtime/checkpoints.db` 检查点） |
-| 检索 | BM25 + 256 维 blake2b 哈希向量 + RRF；Embedding 配置已预留 |
+| 检索 | BM25 + 256 维 blake2b 哈希向量 + RRF；配置 `EMBEDDING_*` 后自动切换远端语义向量 |
 | 部署 | 单进程 `uv run python -m app.main`，内置静态托管 |
 
 PostgreSQL、Redis、MinIO 的配置字段保留在 `.env`，lite 演示档不启用；切换到 `DB_BACKEND=postgresql` 即可改用外部数据库。
@@ -139,4 +139,4 @@ start.ps1 / start.bat
 - `starlette` 锁定 `<1.0`：当前 FastAPI 版本与 Starlette 1.x 的 `include_router` 不兼容，会导致路由全部 404。
 - lite 档面向单用户演示，`WORKER_CONCURRENCY` 固定为 1，未做并发压测。
 - 预置文档不可删除，上传文档可删。
-- 当前检索使用本地哈希向量；换成远程 Embedding 时需要重建索引。
+- 检索默认用本地哈希向量（零外部依赖）；`EMBEDDING_BASE_URL / KEY / MODEL` 三项齐全时，启动或上传后重建索引会自动改用远端 embedding，失败整体回退哈希，不会混用两种维度。

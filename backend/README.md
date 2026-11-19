@@ -32,6 +32,15 @@ uv run python -m app.main
 `LLM_API_KEY` 为空时，Agent 用确定性模板组织答案（检索、子网计算、审批、事件流全部可用），适合离线演示；
 填入 Key 后，`compose` 阶段由模型润色回答，失败会自动回落到模板，不阻塞主流程。
 
+Embedding 是可选通道，默认关闭：
+
+- 三项（`EMBEDDING_BASE_URL / EMBEDDING_API_KEY / EMBEDDING_MODEL`）任一为空 → 用本地 256 维哈希向量，零外部依赖；
+- 三项齐全 → 刷新索引时批量向量化（按「切片 id + 文本」缓存到 `RETRIEVAL_CACHE_DIR`，内容不变不重复计费），查询用同一模型编码；
+- 远端失败 → 整份索引回退哈希，查询只走 BM25，服务不中断，也不会混用两种维度；
+- 换模型或维度后重启即可重建，缓存文件名带模型指纹，不会复用旧向量。
+
+当前生效的通道可从 `GET /api/v2/health` 的 `vector_mode` / `embedder` 字段确认。
+
 ## 主要接口
 
 | 方法 | 路径 | 说明 |
@@ -43,6 +52,8 @@ uv run python -m app.main
 | GET/POST | `/api/v2/courses/{id}/documents` | 文档列表 / 上传（md、txt、pdf、docx、pptx） |
 | GET | `/api/v2/documents/{id}/chunks` | 分块预览 |
 | POST | `/api/v2/search` | BM25 + 向量 + RRF 检索 |
+
+`GET /health` 会带 `vector_mode`（`hash` / `remote`）与 `embedder` 标签，用于确认当前生效的向量通道。
 | GET | `/api/v2/sources/{chunk_id}` | 引用片段与相邻原文 |
 | POST | `/api/v2/chat-sessions/{id}/runs` | 创建一次问答运行（202） |
 | GET | `/api/v2/chat-sessions` | 会话列表，含每个会话最近一次运行 |
@@ -102,7 +113,7 @@ app/
   models.py      Course/Chapter/Concept/Edge/Document/Chunk/Session/Message/Run/RunStep
   seed.py        预置课程、18 个知识点、21 条关系、3 份课件
   ingest.py      md/txt/pdf/docx/pptx 解析与 600–1000 字分块
-  retrieval.py   BM25 + 哈希向量 + RRF
+  retrieval.py   BM25 + 向量通道 + RRF（哈希本地 / 远端 embedding 可切换）
   tools.py       子网计算、知识点查询
   agent.py       LangGraph 状态图与审批中断
   api.py         /api/v2 路由与 SSE
