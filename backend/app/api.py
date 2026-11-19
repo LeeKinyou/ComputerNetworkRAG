@@ -62,6 +62,8 @@ async def health() -> dict:
         "db_backend": settings.db_backend,
         "llm_ready": settings.llm_ready,
         "retriever_ready": retriever.ready,
+        "vector_mode": retriever.vector_mode,
+        "embedder": retriever.embedder_label,
     }
 
 

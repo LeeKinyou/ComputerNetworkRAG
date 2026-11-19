@@ -30,7 +30,12 @@ async def lifespan(_: FastAPI):
     await init_db()
     async with SessionFactory() as session:
         await retriever.refresh(session)
-    logger.info("retriever ready: %s chunks", len(retriever._records))
+    logger.info(
+        "retriever ready: %s chunks, vector=%s (%s)",
+        len(retriever._records),
+        retriever.vector_mode,
+        retriever.embedder_label,
+    )
 
     checkpoint_path = settings.resolve_path(settings.checkpoint_sqlite_path)
     checkpoint_path.parent.mkdir(parents=True, exist_ok=True)

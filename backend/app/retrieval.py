@@ -1,12 +1,18 @@
-"""进程内检索：BM25 + 轻量哈希向量 + RRF 融合。
+"""进程内检索：BM25 + 向量通道 + RRF 融合。
 
-lite 档不引入向量库；chunk 数量在演示规模内（数百条），启动时一次性装载，
-上传后调用 refresh() 重建。接口保持 search() 一个入口，后续可替换为远端 embedding。
+向量通道有两种实现，由配置决定、启动时自动选择：
+
+- 默认 `hash`：`embed()` 的确定性哈希向量，零外部依赖，适合离线演示；
+- 可选 `remote`：`EMBEDDING_*` 三项齐全时启用 OpenAI 兼容接口，远端失败整体回退哈希。
+
+chunk 数量在演示规模内（数百条），启动时一次性装载，上传后调用 refresh() 重建。
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+import logging
 import math
 import re
 from dataclasses import dataclass, field
@@ -16,7 +22,11 @@ from rank_bm25 import BM25Okapi
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import embedding
+from app.config import settings
 from app.models import Chunk, Document
+
+logger = logging.getLogger("cnrag.retrieval")
 
 VECTOR_DIM = 256
 TERM_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9./:_-]*")
@@ -80,10 +90,37 @@ class Retriever:
         self._records: list[ChunkRecord] = []
         self._bm25: BM25Okapi | None = None
         self._ready = False
+        self._vector_mode = "hash"
+        self._embedder_label = f"hash/{VECTOR_DIM}d"
+        self._query_warned = False
 
     @property
     def ready(self) -> bool:
         return self._ready
+
+    @property
+    def vector_mode(self) -> str:
+        """当前实际生效的向量通道：`hash` 或 `remote`。"""
+        return self._vector_mode
+
+    @property
+    def embedder_label(self) -> str:
+        return self._embedder_label
+
+    @staticmethod
+    def _embed_records(records: list[ChunkRecord]) -> list[list[float]]:
+        """远端向量化，按切片内容缓存；同步实现，由 refresh 放到线程池里跑。"""
+        cache = embedding.load_cache()
+        keys = [embedding.cache_key(record.chunk_id, record.text) for record in records]
+        missing = [index for index, key in enumerate(keys) if key not in cache]
+        if missing:
+            fresh = embedding.embed_documents([records[index].text for index in missing])
+            if len(fresh) != len(missing):
+                raise RuntimeError(f"embedding 返回数量不匹配：{len(fresh)} != {len(missing)}")
+            for index, vector in zip(missing, fresh):
+                cache[keys[index]] = vector
+            embedding.save_cache(cache)
+        return [cache[key] for key in keys]
 
     async def refresh(self, session: AsyncSession) -> None:
         rows = (
@@ -106,12 +143,42 @@ class Retriever:
                     text=text,
                     chapter_id=document.chapter_id,
                     tokens=tokenize(text),
-                    vector=embed(text),
+                    vector=[],
                 )
             )
+
+        vectors: list[list[float]] | None = None
+        if records and embedding.enabled():
+            try:
+                vectors = await asyncio.to_thread(self._embed_records, records)
+            except Exception as exc:  # 远端不可用时不能让整个索引起不来
+                logger.warning("远端 embedding 不可用，回退本地哈希向量：%s", exc)
+
+        if vectors and len(vectors) == len(records):
+            for record, vector in zip(records, vectors):
+                record.vector = vector
+            self._vector_mode = "remote"
+            self._embedder_label = f"remote:{settings.embedding_model}/{len(vectors[0])}d"
+        else:
+            for record in records:
+                record.vector = embed(record.text)
+            self._vector_mode = "hash"
+            self._embedder_label = f"hash/{VECTOR_DIM}d"
+
         self._records = records
         self._bm25 = BM25Okapi([r.tokens for r in records]) if records else None
         self._ready = True
+
+    def _query_vector(self, query: str) -> list[float] | None:
+        if self._vector_mode != "remote":
+            return embed(query)
+        try:
+            return embedding.embed_query(query)
+        except Exception as exc:
+            if not self._query_warned:
+                logger.warning("查询 embedding 失败，本次只走 BM25：%s", exc)
+                self._query_warned = True
+            return None
 
     def search(
         self,
@@ -139,10 +206,12 @@ class Retriever:
         bm25_sorted = sorted(bm25_ranks, key=lambda item: (-item[1], item[0]))[:pool]
         bm25_order = {index: rank for rank, (index, _) in enumerate(bm25_sorted, start=1)}
 
-        query_vec = embed(query)
-        vector_scores = [
-            (index, cosine(query_vec, record.vector)) for index, record in candidates
-        ]
+        query_vec = self._query_vector(query)
+        vector_scores: list[tuple[int, float]] = []
+        if query_vec:
+            vector_scores = [
+                (index, cosine(query_vec, record.vector)) for index, record in candidates
+            ]
         vector_sorted = sorted(vector_scores, key=lambda item: (-item[1], item[0]))[:pool]
         vector_order = {index: rank for rank, (index, _) in enumerate(vector_sorted, start=1)}
 
