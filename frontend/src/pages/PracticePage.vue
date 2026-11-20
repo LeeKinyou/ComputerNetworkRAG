@@ -28,6 +28,12 @@ const conceptIds = ref<string[]>(
     ? route.query.concepts.split(',').map((item) => item.trim()).filter(Boolean)
     : [],
 )
+// 错题本「重做这 N 道错题」带过来的题目集合
+const questionIds = ref<string[]>(
+  typeof route.query.questions === 'string'
+    ? route.query.questions.split(',').map((item) => item.trim()).filter(Boolean)
+    : [],
+)
 const questions = ref<PracticeQuestion[]>([])
 const index = ref(0)
 const answers = reactive<Record<string, string>>({})
@@ -95,11 +101,21 @@ async function start() {
   void loadCumulative()
   try {
     const params = ['limit=10', 'shuffle=true']
+    if (questionIds.value.length) {
+      params.push(`question_ids=${questionIds.value.join(',')}`)
+      params.push(`limit=${Math.min(30, questionIds.value.length)}`)
+    }
     if (chapterId.value) params.push(`chapter_id=${chapterId.value}`)
     if (conceptId.value) params.push(`concept_id=${conceptId.value}`)
     if (conceptIds.value.length) params.push(`concept_ids=${conceptIds.value.join(',')}`)
     const result = await api.get<{ items: PracticeQuestion[] }>(`/questions?${params.join('&')}`)
     questions.value = result.items
+    if (!result.items.length && questionIds.value.length) {
+      questionIds.value = []
+      notify('这些错题已在题库中移除，已切到全部章节')
+      await start()
+      return
+    }
     if (!result.items.length && conceptIds.value.length) {
       conceptIds.value = []
       notify('这些知识点暂无题目，已切到全部章节')
@@ -134,6 +150,7 @@ async function recommend() {
   chapterId.value = ''
   conceptId.value = ''
   conceptIds.value = []
+  questionIds.value = []
   for (const key of Object.keys(answers)) delete answers[key]
   for (const key of Object.keys(results)) delete results[key]
   try {
@@ -222,13 +239,17 @@ watch(currentKey, () => {
 
 // 同一页面内 query 变化（例如从结果页点「再练一组」周边的概念链接）也要重新组卷
 watch(
-  () => [route.query.chapter, route.query.concept, route.query.concepts],
+  () => [route.query.chapter, route.query.concept, route.query.concepts, route.query.questions],
   () => {
     chapterId.value = typeof route.query.chapter === 'string' ? route.query.chapter : ''
     conceptId.value = typeof route.query.concept === 'string' ? route.query.concept : ''
     conceptIds.value =
       typeof route.query.concepts === 'string'
         ? route.query.concepts.split(',').map((item) => item.trim()).filter(Boolean)
+        : []
+    questionIds.value =
+      typeof route.query.questions === 'string'
+        ? route.query.questions.split(',').map((item) => item.trim()).filter(Boolean)
         : []
     void start()
   },
@@ -250,7 +271,13 @@ onUnmounted(() => {
       </div>
       <div class="flex flex-wrap items-center gap-1.5">
         <span
-          v-if="recommended"
+          v-if="questionIds.length"
+          class="rounded-full bg-[#FBECEC] px-2.5 py-1 text-[10px] text-[#B4552D]"
+        >
+          错题重做 · {{ questionIds.length }} 题
+        </span>
+        <span
+          v-else-if="recommended"
           class="rounded-full bg-[#FFF3E2] px-2.5 py-1 text-[10px] text-[#8A6A32]"
         >
           为你推荐
@@ -269,8 +296,8 @@ onUnmounted(() => {
         </span>
         <button
           class="rounded-full px-2.5 py-1 text-[10.5px] transition-colors"
-          :class="chapterId === '' && !recommended && !conceptIds.length ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-subink'"
-          @click="chapterId = ''; conceptId = ''; conceptIds = []; start()"
+          :class="chapterId === '' && !recommended && !conceptIds.length && !questionIds.length ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-subink'"
+          @click="chapterId = ''; conceptId = ''; conceptIds = []; questionIds = []; start()"
         >
           全部章节
         </button>
@@ -279,7 +306,7 @@ onUnmounted(() => {
           :key="chapter.id"
           class="rounded-full px-2.5 py-1 text-[10.5px] transition-colors"
           :class="chapterId === chapter.id ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-subink'"
-          @click="chapterId = chapter.id; conceptId = ''; conceptIds = []; start()"
+          @click="chapterId = chapter.id; conceptId = ''; conceptIds = []; questionIds = []; start()"
         >
           {{ chapter.title }}
         </button>

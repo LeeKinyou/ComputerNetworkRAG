@@ -26,6 +26,13 @@ function retry(conceptId: string | null) {
   router.push({ path: '/practice', query: conceptId ? { concept: conceptId } : {} })
 }
 
+/** 错题重做：把当前所有待复习题按错得最多的顺序带进练习页。 */
+const retryAllLink = computed(() => {
+  const items = data.value?.items ?? []
+  if (!items.length) return '/practice'
+  return `/practice?questions=${items.map((item) => item.question_id).join(',')}`
+})
+
 function ask(stem: string) {
   router.push({ path: '/chat', query: { q: stem } })
 }
@@ -50,10 +57,11 @@ watch(currentKey, load)
         </p>
       </div>
       <RouterLink
-        to="/practice"
+        :to="retryAllLink"
         class="pill-btn h-9 border border-line bg-surface text-subink hover:border-line-strong hover:text-ink"
       >
-        去练习
+        <span v-if="data?.items.length">重做这 {{ data.items.length }} 道错题</span>
+        <span v-else>去练习</span>
         <ArrowRight :size="13" />
       </RouterLink>
     </div>

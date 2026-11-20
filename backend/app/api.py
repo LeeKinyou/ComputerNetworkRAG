@@ -756,10 +756,17 @@ async def list_questions(
     chapter_id: str | None = None,
     concept_id: str | None = None,
     concept_ids: str | None = None,
+    question_ids: str | None = None,
     limit: int = Query(10, ge=1, le=100),
     shuffle: bool = True,
 ) -> dict:
     stmt = select(Question).where(Question.course_id == course_id)
+    if question_ids:
+        # 错题重做：按指定题目组卷，顺序保持传入顺序更符合复习预期
+        ids = [item.strip() for item in question_ids.split(",") if item.strip()][:30]
+        if ids:
+            stmt = stmt.where(Question.id.in_(ids))
+            shuffle = False
     if chapter_id:
         stmt = stmt.where(Question.chapter_id == chapter_id)
     if concept_id:
