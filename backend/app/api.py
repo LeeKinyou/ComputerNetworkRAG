@@ -198,6 +198,20 @@ async def list_documents(course_id: str, session: SessionDep) -> dict:
             select(Document).where(Document.course_id == course_id).order_by(Document.created_at.desc())
         )
     ).scalars().all()
+    # 引用命中：按问答 citations 统计每份文档被多少个提问引用过（同一提问多片段只计一次），
+    # 与文档详情的「被这些提问引用」保持同一口径。
+    runs = (
+        await session.execute(
+            select(Run).where(Run.course_id == course_id, Run.status == "completed")
+        )
+    ).scalars().all()
+    doc_hits: Counter[str] = Counter()
+    for run in runs:
+        doc_ids = {
+            str(citation.get("document_id") or "") for citation in (run.citations or [])
+        }
+        for doc_id in doc_ids - {""}:
+            doc_hits[doc_id] += 1
     return {
         "items": [
             {
@@ -209,6 +223,7 @@ async def list_documents(course_id: str, session: SessionDep) -> dict:
                 "status": d.status,
                 "chunk_count": d.chunk_count,
                 "chapter_id": d.chapter_id,
+                "citation_count": doc_hits.get(d.id, 0),
                 "created_at": iso(d.created_at),
             }
             for d in documents
@@ -277,6 +292,70 @@ async def document_chunks(document_id: str, session: SessionDep, limit: int = Qu
             }
             for c in chunks
         ]
+    }
+
+
+@router.get("/documents/{document_id}/citations")
+async def document_citations(
+    document_id: str, session: SessionDep, limit: int = Query(default=4, ge=1, le=20)
+) -> dict:
+    """这份材料被哪些提问引用过：按分块统计命中次数，并列出最近被引用的提问。"""
+    document = await session.get(Document, document_id)
+    if document is None:
+        raise _fail(404, "NOT_FOUND", "文档不存在")
+
+    runs = (
+        await session.execute(
+            select(Run)
+            .where(Run.course_id == COURSE_ID, Run.status == "completed")
+            .order_by(Run.created_at.desc())
+        )
+    ).scalars().all()
+
+    chunk_hits: Counter[str] = Counter()
+    run_total = 0
+    seen_questions: set[str] = set()
+    items: list[dict] = []
+    for run in runs:
+        hits = [
+            citation
+            for citation in (run.citations or [])
+            if str(citation.get("document_id") or "") == document_id
+        ]
+        if not hits:
+            continue
+        run_total += 1
+        for citation in hits:
+            chunk_id = str(citation.get("chunk_id") or "")
+            if chunk_id:
+                chunk_hits[chunk_id] += 1
+        if len(items) < limit:
+            question = (run.question or "").strip()
+            if question in seen_questions:
+                continue
+            seen_questions.add(question)
+            best = max(hits, key=lambda citation: float(citation.get("score") or 0))
+            items.append(
+                {
+                    "run_id": run.id,
+                    "session_id": run.session_id,
+                    "question": run.question,
+                    "created_at": iso(run.created_at),
+                    "chunk_id": best.get("chunk_id"),
+                    "locator": best.get("locator"),
+                    "excerpt": best.get("excerpt"),
+                    "score": best.get("score"),
+                    "hit_chunks": len({str(citation.get("chunk_id") or "") for citation in hits}),
+                }
+            )
+
+    return {
+        "document_id": document.id,
+        "title": document.title,
+        "run_total": run_total,
+        "chunk_total": len(chunk_hits),
+        "chunk_counts": dict(chunk_hits),
+        "items": items,
     }
 
 
@@ -393,6 +472,45 @@ async def create_run(session_id: str, payload: RunCreate, session: SessionDep) -
         "status": "queued",
         "events_url": f"/api/v2/runs/{run.id}/events",
     }
+
+
+@router.get("/runs/pending")
+async def pending_runs(
+    session: SessionDep,
+    course_id: str = COURSE_ID,
+    user_key: str = Query(..., min_length=1),
+) -> dict:
+    """等待当前用户审批的运行，工作台可直接批准/拒绝，不必跳到问答页。
+
+    注意：本路由必须定义在 `/runs/{run_id}` 之前，否则 "pending" 会被当成 run_id。
+    """
+    runs = (
+        await session.execute(
+            select(Run)
+            .where(
+                Run.course_id == course_id,
+                Run.user_key == user_key,
+                Run.status == "waiting_user",
+            )
+            .order_by(Run.created_at.desc())
+        )
+    ).scalars().all()
+    session_rows = (
+        await session.execute(select(ChatSession).where(ChatSession.course_id == course_id))
+    ).scalars().all()
+    titles = {row.id: row.title for row in session_rows}
+    items = [
+        {
+            "run_id": run.id,
+            "session_id": run.session_id,
+            "session_title": titles.get(run.session_id, ""),
+            "question": run.question,
+            "pending_input": run.pending_input,
+            "created_at": iso(run.created_at),
+        }
+        for run in runs
+    ]
+    return {"user_key": user_key, "total": len(items), "items": items}
 
 
 @router.get("/runs/{run_id}")
@@ -1097,6 +1215,15 @@ async def learning_next(
 
     tasks: list[dict] = []
     picked: set[str] = set()
+
+    def push(entry: dict, reason: str, action: str | None = None) -> bool:
+        """按 limit 收口：先修与后继共用一个额度，不允许溢出。"""
+        if len(tasks) >= limit:
+            return False
+        tasks.append(make_task(entry, reason, action))
+        picked.add(entry["concept_id"])
+        return True
+
     for item in candidates:
         if len(tasks) >= limit:
             break
@@ -1106,16 +1233,14 @@ async def learning_next(
         source_id = prereq.get(item["concept_id"])
         source = concepts.get(source_id or "")
         if source and source["state"] in ("weak", "no_data") and source["concept_id"] not in picked:
-            tasks.append(
-                make_task(
-                    source,
-                    f"它是「{item['title']}」的先修，先补这一步更省力",
-                    action="review" if source["state"] == "weak" else "learn",
-                )
-            )
-            picked.add(source["concept_id"])
-        tasks.append(make_task(item, reason_for(item)))
-        picked.add(item["concept_id"])
+            if not push(
+                source,
+                f"它是「{item['title']}」的先修，先补这一步更省力",
+                action="review" if source["state"] == "weak" else "learn",
+            ):
+                break
+        if not push(item, reason_for(item)):
+            break
 
     recent = (
         await session.execute(
