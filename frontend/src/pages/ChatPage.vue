@@ -186,6 +186,14 @@ onMounted(() => {
   void loadSessions()
 })
 
+watch(currentKey, () => {
+  sessions.value = []
+  localTasks.value = JSON.parse(JSON.stringify(seedTasks))
+  selectedId.value = ''
+  draft.value = true
+  void loadSessions()
+})
+
 function statusOf(raw: string): Task['status'] {
   if (raw === 'waiting_user') return 'waiting_approval'
   if (raw === 'queued' || raw === 'running') return 'running'
@@ -227,20 +235,24 @@ function taskFromSession(item: SessionSummary): Task | null {
 async function loadSessions() {
   try {
     const result = await api.get<{ items: SessionSummary[] }>(
-      '/chat-sessions?course_id=course_cn',
+      `/chat-sessions?course_id=course_cn&user_key=${currentKey.value}`,
     )
     sessions.value = result.items
     const real = result.items
       .map(taskFromSession)
       .filter((item): item is Task => item !== null)
-    if (real.length) {
-      localTasks.value = [...real, ...localTasks.value.filter((item) => demoIds.has(item.id))]
-      if (!selectedId.value || localTasks.value.every((item) => item.id !== selectedId.value)) {
-        selectedId.value = real[0].id
-      }
-      const current = localTasks.value.find((item) => item.id === selectedId.value)
-      if (current && !demoIds.has(current.id)) void openTask(current)
+    // 后端可用时只展示本人的真实会话，避免演示任务被误认为别人的历史
+    localTasks.value = real
+    if (!real.length) {
+      selectedId.value = ''
+      draft.value = true
+      return
     }
+    if (!selectedId.value || localTasks.value.every((item) => item.id !== selectedId.value)) {
+      selectedId.value = real[0].id
+    }
+    const current = localTasks.value.find((item) => item.id === selectedId.value)
+    if (current) void openTask(current)
   } catch {
     // 后端未启动时保留演示任务，页面仍然可展示
   }
@@ -279,6 +291,7 @@ async function ask(text: string) {
       const created = await api.post<{ id: string }>('/chat-sessions', {
         course_id: 'course_cn',
         title: '课程问答',
+        user_key: currentKey.value,
       })
       sessionId = created.id
       sessions.value.unshift({
