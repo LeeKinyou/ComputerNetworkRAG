@@ -1,11 +1,11 @@
-"""预置演示数据：一门计算机网络课、6 章、18 个知识点、21 条关系、3 份课件。
+"""预置演示数据：一门计算机网络课、6 章、20 个知识点、23 条关系、3 份课件。
 
 图谱由"课程大纲 + 概念表"确定性构建，不依赖模型自动抽取，保证演示效果稳定。
 """
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.db import SessionFactory
 from app.models import Chapter, Chunk, Concept, ConceptEdge, Course, Document, Question
@@ -43,6 +43,8 @@ CONCEPTS = [
     ("dns", "ch_05", "DNS", "把域名解析为地址，采用分布式层级命名系统，递归查询与迭代查询配合使用。"),
     ("http", "ch_05", "HTTP", "应用层请求/响应协议，HTTP/1.1 持久连接、HTTP/2 多路复用、HTTP/3 基于 QUIC。"),
     ("tls", "ch_05", "TLS", "在传输层之上提供加密、身份认证与完整性保护，HTTPS 即 HTTP over TLS。"),
+    ("crypto", "ch_06", "对称与非对称加密", "对称加密用同一密钥、速度快，适合批量数据；非对称加密公私钥分离，便于密钥分发与数字签名，但运算开销大。"),
+    ("firewall", "ch_06", "防火墙", "位于内外网边界实施访问控制：包过滤按源/目的地址、端口与协议在网络层与传输层筛选，应用层代理则深入到内容。"),
 ]
 
 EDGES = [
@@ -67,6 +69,8 @@ EDGES = [
     ("http", "tls", "related"),
     ("dns", "http", "prerequisite"),
     ("udp", "dns", "related"),
+    ("crypto", "tls", "prerequisite"),
+    ("firewall", "tls", "related"),
 ]
 
 # 文档：标题、文件名、mime、章节、分块（section_path, page, text）
@@ -531,7 +535,7 @@ QUESTIONS = [
     {
         "id": "q_ch6_03",
         "chapter_id": "ch_06",
-        "concept_id": "tls",
+        "concept_id": "crypto",
         "type": "single",
         "stem": "对称加密相比非对称加密的主要优势是什么？",
         "options": [
@@ -548,7 +552,7 @@ QUESTIONS = [
     {
         "id": "q_ch6_04",
         "chapter_id": "ch_06",
-        "concept_id": None,
+        "concept_id": "firewall",
         "type": "judge",
         "stem": "防火墙只能部署在应用层，无法在网络层过滤流量。",
         "options": [
@@ -970,6 +974,51 @@ QUESTIONS = [
 ]
 
 
+async def _seed_concepts(session) -> None:
+    """概念与关系幂等补种：老演示库缺哪个补哪个，并把未挂知识点的题回填归属。"""
+    existing = set((await session.execute(select(Concept.id))).scalars().all())
+    for index, (cid, chapter_id, title, description) in enumerate(CONCEPTS):
+        if cid in existing:
+            continue
+        session.add(
+            Concept(
+                id=cid,
+                course_id=COURSE_ID,
+                chapter_id=chapter_id,
+                code=cid,
+                title=title,
+                description=description,
+                sort_order=index,
+            )
+        )
+
+    edge_rows = (await session.execute(select(ConceptEdge.source_id, ConceptEdge.target_id, ConceptEdge.kind))).all()
+    known_edges = {(row[0], row[1], row[2]) for row in edge_rows}
+    for source, target, kind in EDGES:
+        if (source, target, kind) in known_edges:
+            continue
+        session.add(
+            ConceptEdge(
+                id=new_id(),
+                course_id=COURSE_ID,
+                source_id=source,
+                target_id=target,
+                kind=kind,
+            )
+        )
+
+    seeded = {item["id"]: item.get("concept_id") for item in QUESTIONS}
+    for question_id, concept_id in (await session.execute(select(Question.id, Question.concept_id))).all():
+        target = seeded.get(question_id)
+        # 题库归属以种子为准：既补空缺，也纠正历史库里的漂移（如章节补充知识点后重新挂接）
+        if target and concept_id != target:
+            await session.execute(
+                update(Question).where(Question.id == question_id).values(concept_id=target)
+            )
+
+    await session.commit()
+
+
 async def _seed_questions(session) -> None:
     """题库幂等补种：旧演示库缺哪道就补哪道，新增题目不需要清库。"""
     existing = set((await session.execute(select(Question.id))).scalars().all())
@@ -991,6 +1040,7 @@ async def seed_if_empty() -> None:
     async with SessionFactory() as session:
         existing = await session.scalar(select(Course).where(Course.id == COURSE_ID))
         if existing:
+            await _seed_concepts(session)
             await _seed_questions(session)
             return
 

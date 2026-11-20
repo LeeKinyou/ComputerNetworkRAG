@@ -21,6 +21,7 @@ from app.db import get_session
 from app.ingest import IngestError, ingest_document
 from app.models import Attempt, Chapter, ChatSession, Chunk, Concept, ConceptEdge, Course, Document, Message, Question, Run, RunStep
 from app.practice import answer_summary
+from app.profile import build_profile
 from app.retrieval import retriever
 from app.seed import COURSE_ID
 from app.tools import get_concept
@@ -636,6 +637,7 @@ async def list_questions(
     course_id: str = COURSE_ID,
     chapter_id: str | None = None,
     concept_id: str | None = None,
+    concept_ids: str | None = None,
     limit: int = Query(10, ge=1, le=100),
     shuffle: bool = True,
 ) -> dict:
@@ -644,6 +646,10 @@ async def list_questions(
         stmt = stmt.where(Question.chapter_id == chapter_id)
     if concept_id:
         stmt = stmt.where(Question.concept_id == concept_id)
+    if concept_ids:
+        ids = [item.strip() for item in concept_ids.split(",") if item.strip()]
+        if ids:
+            stmt = stmt.where(Question.concept_id.in_(ids))
     questions = (await session.execute(stmt.order_by(Question.sort_order))).scalars().all()
     if shuffle and len(questions) > limit:
         questions = random.sample(questions, limit)
@@ -1034,6 +1040,125 @@ async def practice_wrongbook(
         "concepts_affected": len(ordered_groups),
         "groups": ordered_groups,
         "items": items[:limit],
+    }
+
+
+@router.get("/learning/next")
+async def learning_next(
+    session: SessionDep,
+    course_id: str = COURSE_ID,
+    user_key: str = Query(..., min_length=1),
+    limit: int = Query(3, ge=1, le=6),
+) -> dict:
+    """按掌握度与先修关系给出「下一步做什么」；只做建议，不改任何数据。"""
+    profile = await build_profile(session, user_key, course_id)
+    chapters = {
+        chapter.id: chapter
+        for chapter in (await session.execute(select(Chapter).where(Chapter.course_id == course_id))).scalars().all()
+    }
+    edges = (
+        await session.execute(
+            select(ConceptEdge).where(
+                ConceptEdge.course_id == course_id, ConceptEdge.kind == "prerequisite"
+            )
+        )
+    ).scalars().all()
+    prereq = {edge.target_id: edge.source_id for edge in edges}
+    concepts = {item["concept_id"]: item for item in profile["concepts"]}
+
+    def make_task(item: dict, reason: str, action: str | None = None) -> dict:
+        chapter = chapters.get(item["chapter_id"] or "")
+        return {
+            "concept_id": item["concept_id"],
+            "title": item["title"],
+            "chapter_id": item["chapter_id"],
+            "chapter_title": chapter.title if chapter else "未挂章节",
+            "state": item["state"],
+            "rate": item["rate"],
+            "attempts": item["attempts"],
+            "action": action
+            or {"weak": "review", "no_data": "learn", "normal": "practice"}[item["state"]],
+            "reason": reason,
+            "minutes": {"weak": 15, "no_data": 12, "normal": 10}[item["state"]],
+        }
+
+    def reason_for(item: dict) -> str:
+        if item["state"] == "weak":
+            return f"近期正确率 {item['rate']}%，先把这里补起来"
+        if item["state"] == "no_data":
+            return "还没练过，先做一组建立判断力"
+        return f"正确率 {item['rate']}%，再练两组就稳了"
+
+    order = {"weak": 0, "no_data": 1, "normal": 2}
+    candidates = sorted(
+        (item for item in profile["concepts"] if item["state"] in order),
+        key=lambda item: (order[item["state"]], item["rate"], -item["attempts"]),
+    )
+
+    tasks: list[dict] = []
+    picked: set[str] = set()
+    for item in candidates:
+        if len(tasks) >= limit:
+            break
+        if item["concept_id"] in picked:
+            continue
+        # 先修没掌握时，把它排到前面：否则直接补后继概念会很吃力
+        source_id = prereq.get(item["concept_id"])
+        source = concepts.get(source_id or "")
+        if source and source["state"] in ("weak", "no_data") and source["concept_id"] not in picked:
+            tasks.append(
+                make_task(
+                    source,
+                    f"它是「{item['title']}」的先修，先补这一步更省力",
+                    action="review" if source["state"] == "weak" else "learn",
+                )
+            )
+            picked.add(source["concept_id"])
+        tasks.append(make_task(item, reason_for(item)))
+        picked.add(item["concept_id"])
+
+    recent = (
+        await session.execute(
+            select(func.count(Attempt.id)).where(
+                Attempt.course_id == course_id,
+                Attempt.user_key == user_key,
+                Attempt.created_at >= utcnow() - timedelta(days=7),
+            )
+        )
+    ).scalar_one()
+
+    chapter_rows = []
+    for chapter in chapters.values():
+        own = [item for item in profile["concepts"] if item["chapter_id"] == chapter.id]
+        attempts = sum(item["attempts"] for item in own)
+        correct = sum(item["correct"] for item in own)
+        chapter_rows.append(
+            {
+                "chapter_id": chapter.id,
+                "title": chapter.title,
+                "concepts": len(own),
+                "covered": sum(1 for item in own if item["attempts"]),
+                "attempts": attempts,
+                "rate": round(correct * 100 / attempts) if attempts else 0,
+            }
+        )
+    chapter_rows.sort(key=lambda row: row["chapter_id"])
+
+    all_items = profile["concepts"]
+    return {
+        "user_key": user_key,
+        "summary": {
+            # 注意：profile 里的 weak/untried/strong 已按注入上限截断，这里要按全量明细统计
+            "weak": sum(1 for item in all_items if item["state"] == "weak"),
+            "untried": sum(1 for item in all_items if not item["attempts"]),
+            "mastered": sum(1 for item in all_items if item["state"] == "mastered"),
+            "covered": profile["covered"],
+            "accuracy": profile["accuracy"],
+            "total": len(all_items),
+        },
+        "recent_attempts": int(recent),
+        "tasks": tasks,
+        "chapters": chapter_rows,
     }
 
 
