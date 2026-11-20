@@ -9,18 +9,31 @@ import {
   Sparkles,
   Target,
 } from 'lucide-vue-next'
+import { useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import type { AnalyticsConcept, AnalyticsOverview } from '@/api/client'
 import { insights } from '@/mock/workbench'
 
+const router = useRouter()
 const range = ref<'week' | 'month'>('week')
 const toast = ref('')
 const stats = ref<AnalyticsOverview | null>(null)
 const concepts = ref<AnalyticsConcept[]>([])
 const conceptTotal = ref(0)
 const conceptCovered = ref(0)
+const chapterTitles = ref<Record<string, string>>({})
 
 onMounted(async () => {
+  try {
+    const result = await api.get<{ items: { id: string; title: string }[] }>(
+      '/courses/course_cn/chapters',
+    )
+    const map: Record<string, string> = {}
+    for (const chapter of result.items) map[chapter.id] = chapter.title
+    chapterTitles.value = map
+  } catch {
+    chapterTitles.value = {}
+  }
   try {
     stats.value = await api.get<AnalyticsOverview>('/analytics/overview')
   } catch {
@@ -68,6 +81,51 @@ function act(text: string) {
   toast.value = text
   window.setTimeout(() => (toast.value = ''), 2200)
 }
+
+/** 全班薄弱点：按薄弱人数排序，人数相同再看正确率 */
+const classWeak = computed(() =>
+  concepts.value
+    .filter((item) => item.weak_students > 0 || (item.attempts > 0 && item.rate < 60))
+    .sort((a, b) => b.weak_students - a.weak_students || a.rate - b.rate),
+)
+
+const weakest = computed(() => classWeak.value[0] ?? null)
+
+function generatePaper() {
+  const ids = classWeak.value.slice(0, 3).map((item) => item.concept_id)
+  if (!ids.length) {
+    act('当前没有薄弱知识点，先让学生在练习中心做一组')
+    return
+  }
+  router.push({ path: '/practice', query: { concepts: ids.join(',') } })
+}
+
+function exportCsv() {
+  if (!concepts.value.length) {
+    act('暂无可导出的概念数据')
+    return
+  }
+  const header = ['知识点', '章节', '作答次数', '答对', '正确率', '覆盖学生', '薄弱学生']
+  const rows = concepts.value.map((item) => [
+    item.title,
+    chapterTitles.value[item.chapter_id ?? ''] ?? '未挂章节',
+    item.attempts,
+    item.correct,
+    `${item.rate}%`,
+    item.students,
+    item.weak_students,
+  ])
+  const csv = [header, ...rows]
+    .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    .join('\r\n')
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = '学情分析-概念.csv'
+  link.click()
+  URL.revokeObjectURL(link.href)
+  act('已导出概念学情 CSV')
+}
 </script>
 
 <template>
@@ -96,7 +154,10 @@ function act(text: string) {
             本月
           </button>
         </div>
-        <button class="pill-btn h-9 border border-line bg-surface text-[11.5px] text-subink hover:border-line-strong">
+        <button
+          class="pill-btn h-9 border border-line bg-surface text-[11.5px] text-subink hover:border-line-strong"
+          @click="exportCsv"
+        >
           <Download :size="13" />
           导出
         </button>
@@ -132,8 +193,11 @@ function act(text: string) {
           <Target :size="11" />
           最薄弱
         </div>
-        <p class="mt-2 text-[12.5px] font-medium text-ink">{{ insights.weakPoints[0].label }}</p>
-        <p class="mt-2 text-[9.5px] text-warn">正确率 {{ insights.weakPoints[0].rate }} · 建议补一份练习</p>
+        <p class="mt-2 text-[12.5px] font-medium text-ink">{{ weakest?.title ?? '暂无薄弱点' }}</p>
+        <p class="mt-2 text-[9.5px] text-warn">
+          正确率 {{ weakest?.rate ?? 0 }}%
+          <template v-if="weakest?.weak_students"> · {{ weakest.weak_students }} 人薄弱</template>
+        </p>
       </div>
     </section>
 
@@ -252,27 +316,33 @@ function act(text: string) {
           </header>
           <div class="p-3">
             <div
-              v-for="w in insights.weakPoints"
-              :key="w.label"
+              v-for="w in classWeak.slice(0, 3)"
+              :key="w.concept_id"
               class="mb-2 rounded-xl border border-line bg-tint-soft px-3 py-2.5 last:mb-0"
             >
               <div class="flex items-center justify-between">
-                <span class="text-[11px] text-subink">{{ w.label }}</span>
-                <span class="font-mono text-[9.5px]" :class="w.level === 'high' ? 'text-warn' : 'text-muted'">
-                  {{ w.rate }}
+                <span class="text-[11px] text-subink">{{ w.title }}</span>
+                <span class="font-mono text-[9.5px]" :class="w.rate < 60 ? 'text-warn' : 'text-muted'">
+                  {{ w.rate }}%
                 </span>
               </div>
+              <p class="mt-1 text-[9px] text-muted">
+                {{ w.attempts }} 次作答 · {{ w.weak_students }} 人薄弱
+              </p>
               <div class="mt-1.5 h-1 overflow-hidden rounded-full bg-tint">
                 <div
                   class="h-full rounded-full"
-                  :class="w.level === 'high' ? 'bg-warn/80' : 'bg-brand/70'"
-                  :style="{ width: w.rate }"
+                  :class="w.rate < 60 ? 'bg-warn/80' : 'bg-brand/70'"
+                  :style="{ width: w.rate + '%' }"
                 />
               </div>
             </div>
+            <div v-if="!classWeak.length" class="py-4 text-center text-[10.5px] text-muted">
+              暂无薄弱知识点
+            </div>
             <button
               class="pill-btn mt-1 h-8 w-full justify-center bg-ink text-[10.5px] text-canvas hover:opacity-90"
-              @click="act('已为 3 个薄弱点生成练习')"
+              @click="generatePaper"
             >
               <Sparkles :size="12" />
               一键生成练习
