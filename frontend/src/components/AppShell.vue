@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { RouterLink, useRoute } from 'vue-router'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
   BarChart3,
   BookMarked,
@@ -11,7 +11,7 @@ import {
   LayoutDashboard,
   Moon,
   PenLine,
-  Route,
+  Route as RouteIcon,
   Search,
   Sparkles,
   Sun,
@@ -19,10 +19,12 @@ import {
   UserRound,
   Waypoints,
 } from 'lucide-vue-next'
+import { api } from '@/api/client'
 import { useTheme } from '@/composables/useTheme'
 import { useStudent } from '@/composables/useStudent'
 
 const route = useRoute()
+const router = useRouter()
 const { currentKey, current, students, setStudent } = useStudent()
 
 function onStudentChange(event: Event) {
@@ -39,7 +41,7 @@ const navGroups = [
       { to: '/practice', label: '练习中心', icon: PenLine },
       { to: '/wrongbook', label: '错题本', icon: BookMarked },
       { to: '/graph', label: '知识图谱', icon: Waypoints },
-      { to: '/path', label: '学习计划', icon: Route },
+      { to: '/path', label: '学习计划', icon: RouteIcon },
       { to: '/documents', label: '知识库', icon: BookOpen },
       { to: '/progress', label: '学习报告', icon: TrendingUp },
       { to: '/profile', label: '我的', icon: UserRound },
@@ -66,6 +68,96 @@ const labels: Record<string, string> = {
 
 const currentLabel = computed(() => labels[String(route.name)] ?? '工作台')
 const isActive = (to: string) => (to === '/' ? route.path === '/' : route.path.startsWith(to))
+
+interface ConceptHit {
+  id: string
+  name: string
+  desc: string
+  chapter: string
+}
+
+const paletteOpen = ref(false)
+const keyword = ref('')
+const activeIndex = ref(0)
+const inputRef = ref<HTMLInputElement | null>(null)
+const concepts = ref<ConceptHit[]>([])
+
+async function ensureConcepts() {
+  if (concepts.value.length) return
+  try {
+    const graph = await api.get<{
+      nodes: { id: string; name: string; desc?: string; chapter_id?: string }[]
+      chapters: { id: string; title: string }[]
+    }>('/courses/course_cn/graph')
+    const titles: Record<string, string> = {}
+    for (const chapter of graph.chapters ?? []) titles[chapter.id] = chapter.title
+    concepts.value = (graph.nodes ?? []).map((node) => ({
+      id: node.id,
+      name: node.name,
+      desc: node.desc ?? '',
+      chapter: titles[node.chapter_id ?? ''] ?? '',
+    }))
+  } catch {
+    concepts.value = []
+  }
+}
+
+const hits = computed(() => {
+  const q = keyword.value.trim().toLowerCase()
+  if (!q) return concepts.value.slice(0, 6)
+  return concepts.value
+    .filter((item) => item.name.toLowerCase().includes(q) || item.desc.toLowerCase().includes(q))
+    .slice(0, 8)
+})
+
+watch(keyword, () => (activeIndex.value = 0))
+
+async function openPalette() {
+  paletteOpen.value = true
+  keyword.value = ''
+  activeIndex.value = 0
+  void ensureConcepts()
+  await nextTick()
+  inputRef.value?.focus()
+}
+
+function closePalette() {
+  paletteOpen.value = false
+}
+
+function goConcept(hit: ConceptHit) {
+  closePalette()
+  router.push({ path: '/graph', query: { focus: hit.id } })
+}
+
+function onPaletteKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    closePalette()
+    return
+  }
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    activeIndex.value = Math.min(activeIndex.value + 1, hits.value.length - 1)
+  } else if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    activeIndex.value = Math.max(activeIndex.value - 1, 0)
+  } else if (event.key === 'Enter' && hits.value[activeIndex.value]) {
+    event.preventDefault()
+    goConcept(hits.value[activeIndex.value])
+  }
+}
+
+// Ctrl + K 唤出搜索；不拦截其他快捷键
+function onGlobalKeydown(event: KeyboardEvent) {
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+    event.preventDefault()
+    if (paletteOpen.value) closePalette()
+    else void openPalette()
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', onGlobalKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
 </script>
 
 <template>
@@ -136,6 +228,8 @@ const isActive = (to: string) => (to === '/' ? route.path === '/' : route.path.s
         <div class="flex items-center gap-1.5">
           <button
             class="flex h-8 items-center gap-2 rounded-full bg-tint px-3 text-[12px] text-muted transition-colors hover:bg-tint-strong hover:text-subink"
+            aria-label="搜索知识点"
+            @click="openPalette"
           >
             <Search :size="13.5" />
             <span class="hidden sm:inline">搜索知识点</span>
@@ -170,5 +264,50 @@ const isActive = (to: string) => (to === '/' ? route.path === '/' : route.path.s
         <slot />
       </div>
     </main>
+
+    <div
+      v-if="paletteOpen"
+      class="fixed inset-0 z-50 flex items-start justify-center bg-ink/25 px-4 pt-[12vh] backdrop-blur-[2px]"
+      @click.self="closePalette"
+    >
+      <div class="w-full max-w-[560px] overflow-hidden rounded-2xl border border-line bg-surface shadow-[0_24px_60px_-18px_rgba(16,24,40,0.35)]">
+        <div class="flex items-center gap-2.5 border-b border-line px-4 py-3">
+          <Search :size="15" class="text-muted" />
+          <input
+            ref="inputRef"
+            v-model="keyword"
+            class="h-7 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted"
+            placeholder="搜知识点，回车跳到图谱定位"
+            @keydown="onPaletteKeydown"
+          />
+          <kbd class="rounded-md bg-tint px-1.5 py-0.5 text-[10px] text-muted">Esc</kbd>
+        </div>
+        <ul v-if="hits.length" class="max-h-[320px] overflow-y-auto p-1.5">
+          <li
+            v-for="(hit, i) in hits"
+            :key="hit.id"
+            class="flex cursor-pointer items-center justify-between gap-3 rounded-xl px-3 py-2.5"
+            :class="i === activeIndex ? 'bg-tint' : 'hover:bg-tint-soft'"
+            @mouseenter="activeIndex = i"
+            @click="goConcept(hit)"
+          >
+            <div class="min-w-0">
+              <p class="truncate text-[12.5px] font-medium text-ink">{{ hit.name }}</p>
+              <p class="mt-0.5 truncate text-[10px] text-muted">{{ hit.desc || hit.chapter }}</p>
+            </div>
+            <span class="shrink-0 rounded-full bg-tint-soft px-2 py-0.5 text-[9.5px] text-muted">
+              {{ hit.chapter }}
+            </span>
+          </li>
+        </ul>
+        <div v-else class="px-4 py-8 text-center text-[11px] text-muted">
+          没找到匹配的知识点，换个关键词试试
+        </div>
+        <div class="flex items-center justify-between border-t border-line px-4 py-2 text-[9.5px] text-muted">
+          <span>↑↓ 选择 · Enter 定位</span>
+          <span>Ctrl + K 关闭</span>
+        </div>
+      </div>
+    </div>
   </div>
 </template>

@@ -52,6 +52,8 @@ const LAYOUT: Record<string, [number, number]> = {
   dns: [-280, -95],
   http: [-190, -150],
   tls: [-80, -175],
+  crypto: [-155, -235],
+  firewall: [30, 220],
 }
 
 const theme = computed(() =>
@@ -200,6 +202,12 @@ function highlightSelected() {
 watch(
   () => props.selectedId,
   () => highlightSelected(),
+)
+
+// 图谱是异步加载的：节点/关系/掌握度回填后必须重绘，否则画布一直停留在内置示意数据
+watch(
+  () => [props.nodes, props.links, props.mastery] as const,
+  () => chart?.setOption(buildOption(), true),
 )
 
 watch(isDark, () => {

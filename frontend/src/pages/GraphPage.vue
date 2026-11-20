@@ -9,7 +9,7 @@ import {
   Sparkles,
   Waypoints,
 } from 'lucide-vue-next'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 import GraphCanvas from '@/components/GraphCanvas.vue'
 import { categories as seedCategories, graphLinks as seedLinks, graphNodes as seedNodes } from '@/mock/data'
 import type { GraphLink, GraphNode } from '@/mock/data'
@@ -18,6 +18,7 @@ import { api, type GraphDto, type PracticeQuestion } from '@/api/client'
 import { useStudent } from '@/composables/useStudent'
 
 const COURSE_ID = 'course_cn'
+const route = useRoute()
 const { currentKey } = useStudent()
 
 type GraphNodeEx = GraphNode & { chapter_id?: string }
@@ -31,7 +32,9 @@ const chapterStats = ref<Record<string, ChapterStat>>({})
 const questionConcepts = ref<Record<string, string>>({})
 const attempts = ref<{ question_id: string; correct: boolean }[]>([])
 const questions = ref<PracticeQuestion[]>([])
-const selectedId = ref<string | null>('tcp')
+const selectedId = ref<string | null>(
+  typeof route.query.focus === 'string' ? route.query.focus : 'tcp',
+)
 const query = ref('')
 
 const selected = computed(() => nodes.value.find((node) => node.id === selectedId.value) ?? null)
@@ -126,6 +129,13 @@ function focusWeak() {
   if (hit) selectedId.value = hit.id
 }
 
+function applyFocus() {
+  const focus = typeof route.query.focus === 'string' ? route.query.focus : ''
+  if (focus && nodes.value.some((node) => node.id === focus)) selectedId.value = focus
+}
+
+watch(() => route.query.focus, applyFocus)
+
 async function loadGraph() {
   try {
     const graph = await api.get<GraphDto>(`/courses/${COURSE_ID}/graph`)
@@ -145,6 +155,7 @@ async function loadGraph() {
       }
     })
     links.value = graphLinks
+    applyFocus()
   } catch {
     // 后端不可用时保留内置图谱，页面依旧可演示
   }

@@ -70,6 +70,18 @@ export interface AttemptResult {
   stats: { total: number; correct: number; rate: number }
 }
 
+export interface PracticeAttemptRow {
+  attempt_id: string
+  question_id: string
+  stem: string
+  type: 'single' | 'judge'
+  chapter_id: string
+  answer: string
+  expected: string
+  correct: boolean
+  created_at: string
+}
+
 export interface WrongBookItem {
   question_id: string
   stem: string
@@ -99,6 +111,43 @@ export interface WrongBook {
   concepts_affected: number
   groups: WrongBookGroup[]
   items: WrongBookItem[]
+}
+
+export interface LearningTask {
+  concept_id: string
+  title: string
+  chapter_id: string | null
+  chapter_title: string
+  state: string
+  rate: number
+  attempts: number
+  action: 'review' | 'learn' | 'practice'
+  reason: string
+  minutes: number
+}
+
+export interface LearningChapter {
+  chapter_id: string
+  title: string
+  concepts: number
+  covered: number
+  attempts: number
+  rate: number
+}
+
+export interface LearningPlan {
+  user_key: string
+  summary: {
+    weak: number
+    untried: number
+    mastered: number
+    covered: number
+    accuracy: number
+    total: number
+  }
+  recent_attempts: number
+  tasks: LearningTask[]
+  chapters: LearningChapter[]
 }
 
 const BASE = '/api/v2'
