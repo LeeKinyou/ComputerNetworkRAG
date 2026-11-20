@@ -23,6 +23,7 @@ from langgraph.types import Command, interrupt
 from app.config import settings
 from app.db import session_scope
 from app.models import ChatSession, Message, Run, RunStep
+from app.profile import build_profile, profile_prompt
 from app.retrieval import retriever
 from app.tools import subnet
 from app.util import new_id
@@ -39,6 +40,7 @@ class TutorState(TypedDict, total=False):
     course_id: str
     question: str
     mode: str
+    profile: dict
     needs_approval: bool
     plan: list[dict]
     evidence: list[dict]
@@ -97,6 +99,10 @@ async def analyze_node(state: TutorState) -> dict:
     mode = "rag" if str(state.get("mode") or "") == "rag" else "agent"
     needs_approval = bool(WRITE_INTENT_RE.search(question))
     plan = _plan(question, needs_approval, mode)
+    profile = state.get("profile") or {}
+    profile_note = (
+        f"，已结合 {profile['covered']} 个知识点的练习记录" if profile.get("attempts") else ""
+    )
     await emit(
         state["run_id"],
         "step_start",
@@ -108,7 +114,8 @@ async def analyze_node(state: TutorState) -> dict:
                 if mode == "rag"
                 else f"智能体模式：识别到 {len(plan)} 个步骤"
                 + ("，包含写操作" if needs_approval else "")
-            ),
+            )
+            + profile_note,
         },
     )
     await emit(
@@ -129,7 +136,11 @@ async def retrieve_node(state: TutorState) -> dict:
     if not retriever.ready:
         async with session_scope() as session:
             await retriever.refresh(session)
-    evidence = retriever.search(state["question"], top_k=4)
+    profile = state.get("profile") or {}
+    boost_chapters = set(profile.get("weak_chapters") or [])
+    evidence = retriever.search(
+        state["question"], top_k=4, boost_chapters=boost_chapters or None
+    )
     elapsed = int((time.perf_counter() - started) * 1000)
     await emit(
         state["run_id"],
@@ -139,6 +150,7 @@ async def retrieve_node(state: TutorState) -> dict:
             "status": "ok" if evidence else "empty",
             "elapsed_ms": elapsed,
             "count": len(evidence),
+            "profile_boost": sorted(boost_chapters),
             "summary": f"命中 {len(evidence)} 个课程片段" if evidence else "没有命中课程片段",
         },
     )
@@ -265,11 +277,13 @@ async def compose_node(state: TutorState) -> dict:
             "已按你的确认执行索引重建（演示环境只记录审批结果，不实际改写课程索引）。\n\n" + answer
         )
     if settings.llm_ready:
-        answer = await _polish_with_model(question, evidence, answer)
+        answer = await _polish_with_model(question, evidence, answer, state.get("profile") or {})
     return {"answer": answer}
 
 
-async def _polish_with_model(question: str, evidence: list[dict], fallback: str) -> str:
+async def _polish_with_model(
+    question: str, evidence: list[dict], fallback: str, profile: dict | None = None
+) -> str:
     """有 Key 时用模型改写；失败不阻塞主流程。"""
     try:
         from langchain_openai import ChatOpenAI
@@ -282,8 +296,12 @@ async def _polish_with_model(question: str, evidence: list[dict], fallback: str)
             timeout=30,
         )
         context = "\n".join(item["excerpt"] for item in evidence[:3])
+        profile_text = profile_prompt(profile)
+        instruction = "你是计算机网络课程助教。基于给定课程片段回答问题，保持中文、简洁、不要编造引用。"
+        if profile_text:
+            instruction = f"{instruction}\n\n{profile_text}"
         prompt = (
-            "你是计算机网络课程助教。基于给定课程片段回答问题，保持中文、简洁、不要编造引用。\n"
+            f"{instruction}\n"
             f"问题：{question}\n课程片段：\n{context}\n\n已有草稿（可改写）：\n{fallback}"
         )
         response = await model.ainvoke(prompt)
@@ -387,6 +405,9 @@ async def execute_run(run_id: str, resume: dict | None = None) -> None:
                     "question": run.question,
                     "mode": run.mode,
                 }
+                payload["profile"] = await build_profile(
+                    session, run.user_key or "demo_user", run.course_id
+                )
             await agent_graph.ainvoke(payload, config=config)
     except Exception as exc:  # noqa: BLE001 - 对外只暴露安全错误码
         await emit(run_id, "run.failed", {"error_code": "AGENT_FAILED", "message": "运行失败，请重试"})

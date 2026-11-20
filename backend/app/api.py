@@ -33,6 +33,7 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 class RunCreate(BaseModel):
     message: str = Field(min_length=1, max_length=8000)
     mode: str = "course_qa"
+    user_key: str = Field(default="demo_user", max_length=64)
 
 
 class RunInput(BaseModel):
@@ -349,6 +350,7 @@ async def create_run(session_id: str, payload: RunCreate, session: SessionDep) -
         session_id=session_id,
         course_id=chat.course_id,
         mode=payload.mode,
+        user_key=payload.user_key,
         question=payload.message,
         status="queued",
     )

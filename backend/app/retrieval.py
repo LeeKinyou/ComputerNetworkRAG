@@ -186,6 +186,7 @@ class Retriever:
         top_k: int = 5,
         chapter_id: str | None = None,
         pool: int = 20,
+        boost_chapters: set[str] | None = None,
     ) -> list[dict]:
         if not self._ready or not self._records or not query.strip():
             return []
@@ -220,6 +221,12 @@ class Retriever:
             fused[index] = fused.get(index, 0.0) + 1.0 / (60 + rank)
         for index, rank in vector_order.items():
             fused[index] = fused.get(index, 0.0) + 1.0 / (60 + rank)
+
+        # 学习画像加权：薄弱/未练概念所在章节的片段略微上浮，让引用更贴学生短板。
+        if boost_chapters:
+            for index in list(fused):
+                if self._records[index].chapter_id in boost_chapters:
+                    fused[index] *= 1.15
 
         ordered = sorted(fused.items(), key=lambda item: (-item[1], item[0]))[:top_k]
         results = []

@@ -51,11 +51,17 @@ async def init_db() -> None:
 def _ensure_columns(connection) -> None:
     """轻量迁移：create_all 不会给已有表补列，旧演示库在这里就地补齐。"""
     inspector = inspect(connection)
-    if "questions" not in inspector.get_table_names():
-        return
-    columns = {column["name"] for column in inspector.get_columns("questions")}
-    if "image_url" not in columns:
-        connection.execute(text("ALTER TABLE questions ADD COLUMN image_url VARCHAR(300)"))
+    tables = set(inspector.get_table_names())
+    if "questions" in tables:
+        columns = {column["name"] for column in inspector.get_columns("questions")}
+        if "image_url" not in columns:
+            connection.execute(text("ALTER TABLE questions ADD COLUMN image_url VARCHAR(300)"))
+    if "runs" in tables:
+        columns = {column["name"] for column in inspector.get_columns("runs")}
+        if "user_key" not in columns:
+            connection.execute(
+                text("ALTER TABLE runs ADD COLUMN user_key VARCHAR(64) DEFAULT 'demo_user'")
+            )
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:

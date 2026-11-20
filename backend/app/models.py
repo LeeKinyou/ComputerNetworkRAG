@@ -112,6 +112,7 @@ class Run(Base):
     session_id: Mapped[str] = mapped_column(ForeignKey("chat_sessions.id", ondelete="CASCADE"), index=True)
     course_id: Mapped[str] = mapped_column(String(36), index=True)
     mode: Mapped[str] = mapped_column(String(24), default="course_qa")
+    user_key: Mapped[str] = mapped_column(String(64), default="demo_user")
     question: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16), default="queued")
     # queued / running / waiting_user / completed / partial / failed / cancelled
