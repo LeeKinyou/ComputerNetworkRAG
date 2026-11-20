@@ -57,6 +57,17 @@ def _fail(status: int, code: str, message: str) -> HTTPException:
     return HTTPException(status_code=status, detail={"code": code, "message": message})
 
 
+def _owner_of(row) -> str:
+    """历史数据没有 user_key，按单用户时代的默认身份兜底。"""
+    return getattr(row, "user_key", None) or "demo_user"
+
+
+def _require_owner(row, user_key: str, message: str) -> None:
+    """按 id 读/写的接口统一在这里校验归属：不匹配一律 404，不暴露对象是否存在。"""
+    if row is None or _owner_of(row) != user_key:
+        raise _fail(404, "NOT_FOUND", message)
+
+
 @router.get("/health")
 async def health() -> dict:
     return {
@@ -301,13 +312,12 @@ async def create_session(payload: SessionCreate, session: SessionDep) -> dict:
 async def list_sessions(
     session: SessionDep,
     course_id: str | None = None,
-    user_key: str | None = None,
+    user_key: str = Query(..., min_length=1),
 ) -> dict:
     query = select(ChatSession).order_by(ChatSession.created_at.desc())
     if course_id:
         query = query.where(ChatSession.course_id == course_id)
-    if user_key:
-        query = query.where(ChatSession.user_key == user_key)
+    query = query.where(ChatSession.user_key == user_key)
     sessions = (await session.execute(query)).scalars().all()
     items = []
     for item in sessions:
@@ -334,7 +344,13 @@ async def list_sessions(
 
 
 @router.get("/chat-sessions/{session_id}/messages")
-async def list_messages(session_id: str, session: SessionDep) -> dict:
+async def list_messages(
+    session_id: str,
+    session: SessionDep,
+    user_key: str = Query(..., min_length=1),
+) -> dict:
+    chat = await session.get(ChatSession, session_id)
+    _require_owner(chat, user_key, "会话不存在")
     messages = (
         await session.execute(
             select(Message).where(Message.session_id == session_id).order_by(Message.created_at)
@@ -351,7 +367,7 @@ async def list_messages(session_id: str, session: SessionDep) -> dict:
 @router.post("/chat-sessions/{session_id}/runs", status_code=202)
 async def create_run(session_id: str, payload: RunCreate, session: SessionDep) -> dict:
     chat = await session.get(ChatSession, session_id)
-    if chat is None:
+    if chat is None or _owner_of(chat) != payload.user_key:
         raise _fail(404, "NOT_FOUND", "会话不存在")
     run = Run(
         id=new_id(),
@@ -379,10 +395,13 @@ async def create_run(session_id: str, payload: RunCreate, session: SessionDep) -
 
 
 @router.get("/runs/{run_id}")
-async def get_run(run_id: str, session: SessionDep) -> dict:
+async def get_run(
+    run_id: str,
+    session: SessionDep,
+    user_key: str = Query(..., min_length=1),
+) -> dict:
     run = await session.get(Run, run_id)
-    if run is None:
-        raise _fail(404, "NOT_FOUND", "运行不存在")
+    _require_owner(run, user_key, "运行不存在")
     return {
         "run_id": run.id,
         "session_id": run.session_id,
@@ -399,7 +418,13 @@ async def get_run(run_id: str, session: SessionDep) -> dict:
 
 
 @router.get("/runs/{run_id}/steps")
-async def run_steps(run_id: str, session: SessionDep) -> dict:
+async def run_steps(
+    run_id: str,
+    session: SessionDep,
+    user_key: str = Query(..., min_length=1),
+) -> dict:
+    run = await session.get(Run, run_id)
+    _require_owner(run, user_key, "运行不存在")
     steps = (
         await session.execute(
             select(RunStep).where(RunStep.run_id == run_id).order_by(RunStep.seq)
@@ -411,7 +436,15 @@ async def run_steps(run_id: str, session: SessionDep) -> dict:
 
 
 @router.get("/runs/{run_id}/events")
-async def run_events(run_id: str, after_seq: int = 0) -> StreamingResponse:
+async def run_events(
+    run_id: str,
+    session: SessionDep,
+    after_seq: int = 0,
+    user_key: str = Query(..., min_length=1),
+) -> StreamingResponse:
+    run = await session.get(Run, run_id)
+    _require_owner(run, user_key, "运行不存在")
+
     async def stream():
         cursor = after_seq
         idle_ticks = 0
@@ -420,7 +453,7 @@ async def run_events(run_id: str, after_seq: int = 0) -> StreamingResponse:
             terminal = False
             async with AsyncSessionLocal() as session:
                 run = await session.get(Run, run_id)
-                if run is None:
+                if run is None or _owner_of(run) != user_key:
                     yield "event: error\ndata: {\"code\":\"NOT_FOUND\"}\n\n"
                     return
                 rows = (
@@ -458,10 +491,14 @@ async def run_events(run_id: str, after_seq: int = 0) -> StreamingResponse:
 
 
 @router.post("/runs/{run_id}/inputs", status_code=202)
-async def submit_input(run_id: str, payload: RunInput, session: SessionDep) -> dict:
+async def submit_input(
+    run_id: str,
+    payload: RunInput,
+    session: SessionDep,
+    user_key: str = Query(..., min_length=1),
+) -> dict:
     run = await session.get(Run, run_id)
-    if run is None:
-        raise _fail(404, "NOT_FOUND", "运行不存在")
+    _require_owner(run, user_key, "运行不存在")
     pending = run.pending_input or {}
     if run.status != "waiting_user" or pending.get("input_id") != payload.input_id:
         raise _fail(409, "RUN_NOT_WAITING", "当前运行不在等待审批状态")
@@ -472,10 +509,13 @@ async def submit_input(run_id: str, payload: RunInput, session: SessionDep) -> d
 
 
 @router.post("/runs/{run_id}/cancel")
-async def cancel_run(run_id: str, session: SessionDep) -> dict:
+async def cancel_run(
+    run_id: str,
+    session: SessionDep,
+    user_key: str = Query(..., min_length=1),
+) -> dict:
     run = await session.get(Run, run_id)
-    if run is None:
-        raise _fail(404, "NOT_FOUND", "运行不存在")
+    _require_owner(run, user_key, "运行不存在")
     if run.status in TERMINAL:
         return {"run_id": run.id, "status": run.status, "cancel_requested": False}
     run.status = "cancelled"

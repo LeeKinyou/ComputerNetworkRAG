@@ -45,6 +45,7 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.run_sync(_ensure_columns)
+        await conn.run_sync(_sync_run_owner)
     await seed_if_empty()
 
 
@@ -70,6 +71,34 @@ def _ensure_columns(connection) -> None:
                     "ALTER TABLE chat_sessions ADD COLUMN user_key VARCHAR(64) DEFAULT 'demo_user'"
                 )
             )
+
+
+def _sync_run_owner(connection) -> None:
+    """早期版本允许 run 的 user_key 与会话归属不一致，这里统一以会话归属为准。
+
+    幂等：只改不一致的行；会话缺失的 run 保持原值，不会被误判给默认身份。
+    """
+    inspector = inspect(connection)
+    if {"runs", "chat_sessions"} - set(inspector.get_table_names()):
+        return
+    connection.execute(
+        text(
+            """
+            UPDATE runs
+            SET user_key = (
+                SELECT chat_sessions.user_key FROM chat_sessions
+                WHERE chat_sessions.id = runs.session_id
+            )
+            WHERE EXISTS (
+                SELECT 1 FROM chat_sessions WHERE chat_sessions.id = runs.session_id
+            )
+            AND user_key <> (
+                SELECT chat_sessions.user_key FROM chat_sessions
+                WHERE chat_sessions.id = runs.session_id
+            )
+            """
+        )
+    )
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:
