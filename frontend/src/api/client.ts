@@ -70,6 +70,25 @@ export interface AttemptResult {
   stats: { total: number; correct: number; rate: number }
 }
 
+export interface PendingInput {
+  input_id: string
+  kind: string
+  prompt: string
+  tool_call_id?: string
+  args_hash?: string
+  approve_label?: string
+  reject_label?: string
+}
+
+export interface PendingRun {
+  run_id: string
+  session_id: string
+  session_title: string
+  question: string
+  pending_input: PendingInput | null
+  created_at: string
+}
+
 export interface PracticeAttemptRow {
   attempt_id: string
   question_id: string
@@ -287,7 +306,29 @@ export interface DocumentSummary {
   status: string
   chunk_count: number
   chapter_id: string | null
+  citation_count: number
   created_at: string
+}
+
+export interface DocumentCitationHit {
+  run_id: string
+  session_id: string
+  question: string
+  created_at: string
+  chunk_id: string | null
+  locator: { section_path?: string[]; page?: number | null } | null
+  excerpt: string | null
+  score: number | null
+  hit_chunks: number
+}
+
+export interface DocumentCitations {
+  document_id: string
+  title: string
+  run_total: number
+  chunk_total: number
+  chunk_counts: Record<string, number>
+  items: DocumentCitationHit[]
 }
 
 export interface GraphNodeDto {

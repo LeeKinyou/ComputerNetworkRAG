@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import {
   BookMarked,
   ChevronRight,
@@ -8,10 +9,11 @@ import {
   FileType2,
   Layers,
   Presentation,
+  Quote,
   RefreshCw,
   Upload,
 } from 'lucide-vue-next'
-import { ApiError, api, type DocumentSummary } from '@/api/client'
+import { ApiError, api, type DocumentCitations, type DocumentSummary } from '@/api/client'
 
 const COURSE_ID = 'course_cn'
 
@@ -24,6 +26,7 @@ interface DocRow {
   chunkCount: number
   chapter: string
   updated: string
+  citations: number
   quality: { label: string; tone: string }
 }
 
@@ -51,6 +54,8 @@ const docList = ref<DocRow[]>([])
 const chapters = ref<{ id: string; title: string }[]>([])
 const selectedId = ref('')
 const chunkList = ref<{ id: string; text: string; topic: string; score: number }[]>([])
+const citationInfo = ref<DocumentCitations | null>(null)
+const citationsLoading = ref(false)
 const uploading = ref(false)
 const deleting = ref(false)
 const loading = ref(true)
@@ -66,6 +71,7 @@ const EMPTY_DOC: DocRow = {
   chunkCount: 0,
   chapter: '—',
   updated: '—',
+  citations: 0,
   quality: { label: '—', tone: 'text-muted' },
 }
 
@@ -109,6 +115,7 @@ function mapDoc(item: DocumentSummary): DocRow {
     chunkCount: item.chunk_count,
     chapter: chapter?.title ?? '未挂章节',
     updated: formatDay(item.created_at),
+    citations: item.citation_count ?? 0,
     quality:
       item.status === 'failed'
         ? { label: '需修复', tone: 'text-[#E36A6A]' }
@@ -162,6 +169,25 @@ async function loadChunks() {
   }
 }
 
+async function loadCitations() {
+  if (!selectedId.value) {
+    citationInfo.value = null
+    return
+  }
+  citationsLoading.value = true
+  try {
+    citationInfo.value = await api.get<DocumentCitations>(
+      `/documents/${selectedId.value}/citations?limit=3`,
+    )
+  } catch {
+    citationInfo.value = null
+  } finally {
+    citationsLoading.value = false
+  }
+}
+
+const citedChunks = computed(() => citationInfo.value?.chunk_counts ?? {})
+
 function pickFile() {
   fileInput.value?.click()
 }
@@ -206,6 +232,7 @@ async function removeSelected() {
     await api.del(`/documents/${doc.id}`)
     await loadDocs()
     await loadChunks()
+    await loadCitations()
     notice.value = `${doc.title} 已移出知识库`
   } catch (error) {
     notice.value = error instanceof ApiError ? error.message : '删除失败'
@@ -216,10 +243,14 @@ async function removeSelected() {
 
 watch(selectedId, () => {
   void loadChunks()
+  void loadCitations()
 })
 
 onMounted(() => {
-  void loadDocs().then(() => loadChunks())
+  void loadDocs().then(() => {
+    void loadChunks()
+    void loadCitations()
+  })
 })
 </script>
 
@@ -297,11 +328,12 @@ onMounted(() => {
           </header>
 
           <div
-            class="hidden grid-cols-[1fr_76px_44px_48px_62px_78px_16px] gap-3 border-b border-line px-5 py-2 text-[9.5px] text-muted md:grid"
+            class="hidden grid-cols-[1fr_76px_44px_44px_48px_62px_78px_16px] gap-3 border-b border-line px-5 py-2 text-[9.5px] text-muted md:grid"
           >
             <span>文档</span>
             <span>章节</span>
             <span>分块</span>
+            <span>引用</span>
             <span>质量</span>
             <span>状态</span>
             <span>更新</span>
@@ -312,7 +344,7 @@ onMounted(() => {
             <li
               v-for="doc in docList"
               :key="doc.id"
-              class="grid cursor-pointer grid-cols-1 items-center gap-2 border-b border-line px-5 py-3 transition-colors last:border-b-0 md:grid-cols-[1fr_76px_44px_48px_62px_78px_16px] md:gap-3"
+              class="grid cursor-pointer grid-cols-1 items-center gap-2 border-b border-line px-5 py-3 transition-colors last:border-b-0 md:grid-cols-[1fr_76px_44px_44px_48px_62px_78px_16px] md:gap-3"
               :class="selectedId === doc.id ? 'bg-brand-soft/35' : 'hover:bg-tint-soft'"
               @click="selectedId = doc.id"
             >
@@ -323,12 +355,19 @@ onMounted(() => {
                 <div class="min-w-0">
                   <p class="truncate text-[12px] text-subink">{{ doc.title }}</p>
                   <p class="mt-0.5 text-[9.5px] text-muted md:hidden">
-                    {{ doc.type.toUpperCase() }} · {{ doc.chapter }} · {{ doc.chunkCount }} 分块
+                    {{ doc.type.toUpperCase() }} · {{ doc.chapter }} · {{ doc.chunkCount }} 分块 ·
+                    被引用 {{ doc.citations }} 次
                   </p>
                 </div>
               </div>
               <span class="hidden truncate text-[10px] text-muted md:block">{{ doc.chapter }}</span>
               <span class="hidden font-mono text-[10px] text-muted md:block">{{ doc.chunkCount }}</span>
+              <span
+                class="hidden font-mono text-[10px] md:block"
+                :class="doc.citations ? 'text-subink' : 'text-muted'"
+              >
+                {{ doc.citations }}
+              </span>
               <span class="hidden text-[9.5px] md:block" :class="doc.quality.tone">
                 {{ doc.quality.label }}
               </span>
@@ -366,6 +405,13 @@ onMounted(() => {
           <p class="mt-0.5 text-[9.5px] text-muted">
             {{ selected.chunkCount }} 个分块 · {{ selected.size }} · {{ selected.chapter }}
           </p>
+          <div class="mt-2 flex items-center gap-1.5 text-[9.5px] text-muted">
+            <Quote :size="11" />
+            <span>
+              被 {{ selected.citations }} 个提问引用 · 命中
+              {{ citationInfo?.chunk_total ?? 0 }} 个分块
+            </span>
+          </div>
         </div>
 
         <div class="min-h-0 flex-1 overflow-y-auto p-3">
@@ -386,10 +432,42 @@ onMounted(() => {
                 <span class="truncate rounded-full bg-brand-soft px-1.5 py-0.5 text-[9px] text-brand">
                   {{ chunk.topic }}
                 </span>
+                <span
+                  v-if="citedChunks[chunk.id]"
+                  class="shrink-0 rounded-full bg-tint px-1.5 py-0.5 font-mono text-[9px] text-subink"
+                >
+                  引用 {{ citedChunks[chunk.id] }}
+                </span>
               </div>
               <p class="mt-1.5 line-clamp-4 text-[10.5px] leading-[1.65] text-subink">{{ chunk.text }}</p>
               <p class="mt-1.5 truncate font-mono text-[8.5px] text-muted">{{ chunk.id }}</p>
             </article>
+          </div>
+        </div>
+
+        <div class="border-t border-line px-4 py-3">
+          <div class="flex items-center justify-between text-[9.5px] text-muted">
+            <span>被这些提问引用</span>
+            <span class="font-mono">{{ citationInfo?.run_total ?? 0 }} 个</span>
+          </div>
+          <p v-if="citationsLoading" class="mt-2 text-[10px] text-muted">正在读取引用记录…</p>
+          <p v-else-if="!citationInfo?.items.length" class="mt-2 text-[10px] text-muted">
+            还没有问答引用过这份材料。
+          </p>
+          <div v-else class="mt-2 flex flex-col gap-1.5">
+            <RouterLink
+              v-for="hit in citationInfo.items"
+              :key="hit.run_id"
+              :to="{ path: '/chat', query: { q: hit.question } }"
+              class="group rounded-lg border border-line px-2.5 py-1.5 transition-colors hover:border-line-strong"
+            >
+              <p class="line-clamp-2 text-[10px] leading-[1.55] text-subink group-hover:text-ink">
+                {{ hit.question }}
+              </p>
+              <p class="mt-1 truncate font-mono text-[8.5px] text-muted">
+                {{ formatDay(hit.created_at) }} · 命中 {{ hit.hit_chunks }} 个分块
+              </p>
+            </RouterLink>
           </div>
         </div>
 

@@ -20,6 +20,7 @@ import type {
   AnalyticsConcept,
   AnalyticsOverview,
   LearningPlan,
+  PendingRun,
   PracticeAttemptRow,
   WrongBook,
 } from '@/api/client'
@@ -34,17 +35,21 @@ const overview = ref<AnalyticsOverview | null>(null)
 const wrongbook = ref<WrongBook | null>(null)
 const classCovered = ref(0)
 const classTotal = ref(0)
+const pendingRuns = ref<PendingRun[]>([])
+const deciding = ref('')
+const decisionError = ref('')
 
 async function load() {
   const key = currentKey.value
   try {
-    const [p, c, a, o, w, cc] = await Promise.all([
+    const [p, c, a, o, w, cc, pr] = await Promise.all([
       api.get<LearningPlan>(`/learning/next?user_key=${key}&limit=3`),
       api.get<{ items: AnalyticsConcept[] }>(`/analytics/concepts?user_key=${key}`),
       api.get<{ items: PracticeAttemptRow[] }>(`/practice/attempts?user_key=${key}&limit=20`),
       api.get<AnalyticsOverview>('/analytics/overview'),
       api.get<WrongBook>(`/practice/wrongbook?user_key=${key}`),
       api.get<{ covered_concepts: number; total_concepts: number }>('/analytics/concepts'),
+      api.get<{ items: PendingRun[] }>(`/runs/pending?user_key=${key}`),
     ])
     plan.value = p
     concepts.value = c.items ?? []
@@ -53,12 +58,14 @@ async function load() {
     wrongbook.value = w
     classCovered.value = cc.covered_concepts ?? 0
     classTotal.value = cc.total_concepts ?? 0
+    pendingRuns.value = pr.items ?? []
   } catch {
     plan.value = null
     concepts.value = []
     attempts.value = []
     overview.value = null
     wrongbook.value = null
+    pendingRuns.value = []
   }
 }
 
@@ -134,7 +141,26 @@ const rhythm = computed(() => {
 const rhythmMax = computed(() => Math.max(...rhythm.value.map((item) => item.value), 1))
 const rhythmTotal = computed(() => rhythm.value.reduce((sum, item) => sum + item.value, 0))
 
-const pending = computed(() => overview.value?.pending_approvals ?? 0)
+const mainPending = computed(() => pendingRuns.value[0] ?? null)
+const pendingCount = computed(() => pendingRuns.value.length)
+
+async function decide(run: PendingRun, approved: boolean) {
+  const input = run.pending_input
+  if (!input) return
+  deciding.value = run.run_id
+  decisionError.value = ''
+  try {
+    await api.post(`/runs/${run.run_id}/inputs?user_key=${currentKey.value}`, {
+      input_id: input.input_id,
+      approved,
+    })
+    await load()
+  } catch {
+    decisionError.value = '提交失败：可能已被处理，去问答页看一下运行状态。'
+  } finally {
+    deciding.value = ''
+  }
+}
 const wrongCount = computed(() => wrongbook.value?.unresolved ?? 0)
 const wrongConcepts = computed(() => {
   const ids = new Set<string>()
@@ -321,27 +347,47 @@ function timeLabel(value: string) {
       </div>
 
       <div class="flex flex-col gap-4">
-        <section v-if="pending" class="surface border-warn/35 overflow-hidden">
+        <section v-if="mainPending" class="surface border-warn/35 overflow-hidden">
           <header class="flex items-center justify-between border-b border-line px-4 py-3">
             <div class="flex items-center gap-1.5 text-[11.5px] text-warn">
               <ShieldCheck :size="13" />
               待你确认
             </div>
-            <span class="text-[9.5px] text-muted">{{ pending }} 条</span>
+            <span class="text-[9.5px] text-muted">{{ pendingCount }} 条</span>
           </header>
           <div class="p-4">
-            <p class="text-[12.5px] font-medium text-ink">有 {{ pending }} 次运行在等审批</p>
+            <p class="line-clamp-2 text-[12.5px] font-medium text-ink">{{ mainPending.question }}</p>
             <p class="mt-1 text-[10.5px] leading-relaxed text-muted">
-              涉及写操作的任务会停下来等你确认，批准后才继续。
+              {{ mainPending.pending_input?.prompt ?? '该操作会修改课程内容，需要你确认。' }}
             </p>
-            <div class="mt-3">
-              <RouterLink
-                to="/chat"
-                class="pill-btn h-8 w-full justify-center bg-ink text-[11px] text-canvas hover:opacity-90"
+            <p class="mt-1.5 text-[9.5px] text-muted">
+              {{ mainPending.session_title || '未命名会话' }} · {{ timeLabel(mainPending.created_at) }}
+            </p>
+            <div class="mt-3 flex gap-2">
+              <button
+                class="pill-btn h-8 flex-1 justify-center bg-ink text-[11px] text-canvas hover:opacity-90 disabled:opacity-50"
+                :disabled="deciding === mainPending.run_id"
+                @click="decide(mainPending, true)"
               >
-                去处理
-              </RouterLink>
+                {{ deciding === mainPending.run_id ? '提交中…' : '批准并继续' }}
+              </button>
+              <button
+                class="pill-btn h-8 border border-line bg-surface text-[11px] text-muted hover:border-line-strong disabled:opacity-50"
+                :disabled="deciding === mainPending.run_id"
+                @click="decide(mainPending, false)"
+              >
+                取消操作
+              </button>
             </div>
+            <p v-if="decisionError" class="mt-2 text-[9.5px] leading-relaxed text-warn">{{ decisionError }}</p>
+            <RouterLink
+              v-if="pendingCount > 1"
+              to="/chat"
+              class="mt-2 flex items-center justify-between text-[9.5px] text-muted hover:text-ink"
+            >
+              还有 {{ pendingCount - 1 }} 条在问答页
+              <ArrowRight :size="10" />
+            </RouterLink>
           </div>
         </section>
 
