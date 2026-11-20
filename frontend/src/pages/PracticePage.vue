@@ -220,6 +220,20 @@ watch(currentKey, () => {
   void start()
 })
 
+// 同一页面内 query 变化（例如从结果页点「再练一组」周边的概念链接）也要重新组卷
+watch(
+  () => [route.query.chapter, route.query.concept, route.query.concepts],
+  () => {
+    chapterId.value = typeof route.query.chapter === 'string' ? route.query.chapter : ''
+    conceptId.value = typeof route.query.concept === 'string' ? route.query.concept : ''
+    conceptIds.value =
+      typeof route.query.concepts === 'string'
+        ? route.query.concepts.split(',').map((item) => item.trim()).filter(Boolean)
+        : []
+    void start()
+  },
+)
+
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
 })
