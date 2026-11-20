@@ -75,7 +75,7 @@ Embedding 是可选通道，默认关闭：
 uv run pytest -q
 ```
 
-当前覆盖确定性逻辑：子网计算的前缀边界与地址策略、文档解析分块的长度与重叠、双模式的任务计划分流、练习判分的答案归一化（大小写、对/错中英文、空作答）。测试不依赖网络、模型 Key 或运行时数据库。
+当前覆盖确定性逻辑：子网计算的前缀边界与地址策略、文档解析分块的长度与重叠、双模式的任务计划分流、练习判分的答案归一化（大小写、对/错中英文、空作答）、学习画像的概念分类（未练 / 薄弱 / 正常 / 已掌握）与提示词生成。测试不依赖网络、模型 Key 或运行时数据库。
 
 ## 演示前重置
 
@@ -106,6 +106,15 @@ uv run python -m app.reset_demo --documents  # 同时移除后台上传的文档
 进程重启后仍可恢复 `waiting_user` 的运行；应用启动时在 lifespan 中注入，测试脚本单独导入
 `app.agent` 时回落到内存存储。
 
+## 学习画像
+
+`app/profile.py` 在每次运行开始时，按 `Attempt.user_key` 聚合练习作答，得到每个概念的
+「未练 / 薄弱（<60%）/ 正常 / 已掌握（≥80%）」，压成 `profile` 放进初始 state：
+
+- `profile_prompt()` 生成 4–6 行中文提示，拼在回答指令里（薄弱或未练的概念先补基础直觉，已掌握的略过铺垫）；没有作答记录时返回空串，不注入。
+- `weak_chapters` 传给 `retriever.search(boost_chapters=...)`，RRF 融合后对这些章节的候选乘 1.15，让引用更贴短板。
+- 画像不落库，只给 `runs` 加了一列 `user_key`（默认 `demo_user`），由 `db._ensure_columns()` 补列，旧库无需重建。
+
 ## 目录
 
 ```
@@ -118,6 +127,7 @@ app/
   retrieval.py   BM25 + 向量通道 + RRF（哈希本地 / 远端 embedding 可切换）
   tools.py       子网计算、知识点查询
   agent.py       LangGraph 状态图与审批中断
+  profile.py     练习作答聚合为学生画像（问答注入 + 检索加权）
   api.py         /api/v2 路由与 SSE
   main.py        单进程入口与静态托管
 ```
