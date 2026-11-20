@@ -61,11 +61,13 @@ Embedding 是可选通道，默认关闭：
 | POST | `/api/v2/runs/{id}/inputs` | 审批结果，恢复被中断的运行 |
 | GET | `/api/v2/analytics/overview` | 课程使用统计：提问量、完成率、章节关注度、高频问题 |
 | GET | `/api/v2/analytics/concepts` | 概念粒度学情：覆盖数、正确率、参与人数、薄弱学生数（可传 `user_key` 只看个人） |
-| GET | `/api/v2/questions` | 组卷：支持 `chapter_id`、`concept_id` 过滤（默认随机 10 题，不下发答案） |
+| GET | `/api/v2/questions` | 组卷：支持 `chapter_id`、`concept_id`、`concept_ids`（逗号分隔多概念）过滤（默认随机 10 题，不下发答案） |
 | GET | `/api/v2/questions/recommended` | 按掌握度组卷：未练过的概念优先，其次正确率偏低，返回 `reason` 说明推荐理由 |
 | POST | `/api/v2/practice/attempts` | 提交作答，即时判分并返回正确答案、解析与出处 |
 | GET | `/api/v2/practice/attempts` | 作答历史（题干、对错、时间） |
 | GET | `/api/v2/practice/stats` | 练习统计：总正确率、按章节正确率、错题次数排行 |
+| GET | `/api/v2/practice/wrongbook` | 错题本：只保留「最近一次仍答错」的题，按概念分组，返回错次数、总作答次数与待复习/已纠正统计 |
+| GET | `/api/v2/learning/next` | 学习计划：按掌握度与先修关系排「下一步」，先修未掌握时先插前置任务，返回任务理由、预计分钟、章节进度与近 7 天练习数 |
 
 `GET /health` 会带 `vector_mode`（`hash` / `remote`）与 `embedder` 标签，用于确认当前生效的向量通道。
 
@@ -128,7 +130,7 @@ app/
   config.py      配置与路径
   db.py          异步引擎、会话、建表
   models.py      Course/Chapter/Concept/Edge/Document/Chunk/Session/Message/Run/RunStep
-  seed.py        预置课程、18 个知识点、21 条关系、3 份课件
+  seed.py        预置课程、20 个知识点、23 条关系、3 份课件（启动时幂等补种，老库缺概念/关系会补齐）
   seed_students.py 幂等写入两名示例学生的练习作答
   ingest.py      md/txt/pdf/docx/pptx 解析与 600–1000 字分块
   retrieval.py   BM25 + 向量通道 + RRF（哈希本地 / 远端 embedding 可切换）
