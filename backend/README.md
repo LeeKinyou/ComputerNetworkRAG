@@ -114,6 +114,8 @@ uv run python -m app.reset_demo --documents  # 同时移除后台上传的文档
 - `profile_prompt()` 生成 4–6 行中文提示，拼在回答指令里（薄弱或未练的概念先补基础直觉，已掌握的略过铺垫）；没有作答记录时返回空串，不注入。
 - `weak_chapters` 传给 `retriever.search(boost_chapters=...)`，RRF 融合后对这些章节的候选乘 1.15，让引用更贴短板。
 - 画像不落库，只给 `runs` 加了一列 `user_key`（默认 `demo_user`），由 `db._ensure_columns()` 补列，旧库无需重建。
+- 多身份：前端顶栏可切 `demo_user`（李金阳）/ `stu_lin`（林晓）/ `stu_zhao`（赵一鸣），`Run.user_key` 与 `Attempt.user_key` 都取自这个选择；教师端 `/analytics/concepts` 不传 `user_key`，看到的就是全班。
+- 演示数据：`python -m app.seed_students` 幂等写入两名示例学生的作答，方便对比「弱学生」与「强学生」。
 
 ## 目录
 
@@ -123,6 +125,7 @@ app/
   db.py          异步引擎、会话、建表
   models.py      Course/Chapter/Concept/Edge/Document/Chunk/Session/Message/Run/RunStep
   seed.py        预置课程、18 个知识点、21 条关系、3 份课件
+  seed_students.py 幂等写入两名示例学生的练习作答
   ingest.py      md/txt/pdf/docx/pptx 解析与 600–1000 字分块
   retrieval.py   BM25 + 向量通道 + RRF（哈希本地 / 远端 embedding 可切换）
   tools.py       子网计算、知识点查询
