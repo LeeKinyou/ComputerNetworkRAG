@@ -36,8 +36,10 @@ import {
   type RunEventPayload,
   type SessionSummary,
 } from '@/api/client'
+import { useStudent } from '@/composables/useStudent'
 
 const route = useRoute()
+const { currentKey } = useStudent()
 const localTasks = ref<Task[]>(JSON.parse(JSON.stringify(seedTasks)))
 const selectedId = ref<string>(seedTasks[0].id)
 const draft = ref(false)
@@ -317,7 +319,7 @@ async function ask(text: string) {
   try {
     const accepted = await api.post<{ run_id: string }>(
       `/chat-sessions/${sessionId}/runs`,
-      { message: text, mode: mode.value },
+      { message: text, mode: mode.value, user_key: currentKey.value },
     )
     task.id = accepted.run_id
     selectedId.value = accepted.run_id

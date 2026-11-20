@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import {
   ArrowRight,
   CheckCircle2,
@@ -14,9 +14,11 @@ import {
 import { RouterLink, useRoute } from 'vue-router'
 import { ApiError, api } from '@/api/client'
 import type { AttemptResult, PracticeQuestion } from '@/api/client'
+import { useStudent } from '@/composables/useStudent'
 
 const COURSE_ID = 'course_cn'
 const route = useRoute()
+const { currentKey } = useStudent()
 
 const chapters = ref<{ id: string; title: string }[]>([])
 const chapterId = ref(typeof route.query.chapter === 'string' ? route.query.chapter : '')
@@ -67,6 +69,17 @@ async function loadChapters() {
   }
 }
 
+async function loadCumulative() {
+  try {
+    const stats = await api.get<{ total: number; correct: number; rate: number }>(
+      `/practice/stats?user_key=${currentKey.value}`,
+    )
+    cumulative.value = { total: stats.total, correct: stats.correct, rate: stats.rate }
+  } catch {
+    cumulative.value = null
+  }
+}
+
 async function start() {
   loading.value = true
   finished.value = false
@@ -74,6 +87,7 @@ async function start() {
   index.value = 0
   for (const key of Object.keys(answers)) delete answers[key]
   for (const key of Object.keys(results)) delete results[key]
+  void loadCumulative()
   try {
     const params = ['limit=10', 'shuffle=true']
     if (chapterId.value) params.push(`chapter_id=${chapterId.value}`)
@@ -111,7 +125,7 @@ async function recommend() {
   for (const key of Object.keys(results)) delete results[key]
   try {
     const result = await api.get<{ items: PracticeQuestion[] }>(
-      '/questions/recommended?user_key=demo_user&limit=10',
+      `/questions/recommended?user_key=${currentKey.value}&limit=10`,
     )
     questions.value = result.items
     recommended.value = true
@@ -131,6 +145,7 @@ async function submit() {
     const result = await api.post<AttemptResult>('/practice/attempts', {
       question_id: question.id,
       answer: selected.value,
+      user_key: currentKey.value,
     })
     results[question.id] = result
     cumulative.value = result.stats
@@ -186,6 +201,10 @@ function onKeydown(event: KeyboardEvent) {
 onMounted(() => {
   void loadChapters().then(() => start())
   window.addEventListener('keydown', onKeydown)
+})
+
+watch(currentKey, () => {
+  void start()
 })
 
 onUnmounted(() => {

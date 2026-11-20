@@ -15,8 +15,10 @@ import { categories as seedCategories, graphLinks as seedLinks, graphNodes as se
 import type { GraphLink, GraphNode } from '@/mock/data'
 import { masteryLabel, type Mastery } from '@/mock/workbench'
 import { api, type GraphDto, type PracticeQuestion } from '@/api/client'
+import { useStudent } from '@/composables/useStudent'
 
 const COURSE_ID = 'course_cn'
+const { currentKey } = useStudent()
 
 type GraphNodeEx = GraphNode & { chapter_id?: string }
 type ChapterStat = { chapter_id: string; label: string; attempts: number; correct: number; rate: number }
@@ -163,7 +165,9 @@ async function loadMasteryData() {
   try {
     const [bank, history] = await Promise.all([
       api.get<{ items: PracticeQuestion[] }>('/questions?limit=30&shuffle=false'),
-      api.get<{ items: { question_id: string; correct: boolean }[] }>('/practice/attempts?limit=100'),
+      api.get<{ items: { question_id: string; correct: boolean }[] }>(
+        `/practice/attempts?limit=100&user_key=${currentKey.value}`,
+      ),
     ])
     const map: Record<string, string> = {}
     for (const question of bank.items) {
@@ -225,6 +229,10 @@ onMounted(() => {
     void loadMasteryData()
     void loadQuestions()
   })
+})
+
+watch(currentKey, () => {
+  void loadMasteryData()
 })
 </script>
 

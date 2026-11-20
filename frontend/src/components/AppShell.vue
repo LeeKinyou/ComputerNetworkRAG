@@ -5,6 +5,7 @@ import {
   BarChart3,
   BookOpen,
   Bot,
+  ChevronDown,
   HelpCircle,
   LayoutDashboard,
   Moon,
@@ -18,8 +19,14 @@ import {
   Waypoints,
 } from 'lucide-vue-next'
 import { useTheme } from '@/composables/useTheme'
+import { useStudent } from '@/composables/useStudent'
 
 const route = useRoute()
+const { currentKey, current, students, setStudent } = useStudent()
+
+function onStudentChange(event: Event) {
+  setStudent((event.target as HTMLSelectElement).value)
+}
 const { isDark, toggle } = useTheme()
 
 const navGroups = [
@@ -136,12 +143,23 @@ const isActive = (to: string) => (to === '/' ? route.path === '/' : route.path.s
             <Moon v-else :size="16" />
           </button>
           <button class="icon-btn"><HelpCircle :size="16" /></button>
-          <RouterLink
-            to="/profile"
-            class="ml-1 grid h-7 w-7 place-items-center rounded-full bg-brand-soft text-[11px] font-semibold text-brand transition-transform hover:scale-105"
+          <label
+            class="ml-1 flex h-7 items-center gap-1.5 rounded-full bg-brand-soft pl-1 pr-1.5"
+            :title="current.note"
           >
-            李
-          </RouterLink>
+            <span class="grid h-5 w-5 place-items-center rounded-full bg-brand text-[10px] font-semibold text-white">
+              {{ current.initial }}
+            </span>
+            <select
+              :value="currentKey"
+              aria-label="切换当前学生"
+              class="h-7 cursor-pointer appearance-none bg-transparent pr-3 text-[11px] font-semibold text-brand outline-none"
+              @change="onStudentChange"
+            >
+              <option v-for="s in students" :key="s.key" :value="s.key">{{ s.name }}</option>
+            </select>
+            <ChevronDown :size="11" class="-ml-3.5 text-brand" />
+          </label>
         </div>
       </header>
 
