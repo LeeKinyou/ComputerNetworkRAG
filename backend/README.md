@@ -52,11 +52,9 @@ Embedding 是可选通道，默认关闭：
 | GET/POST | `/api/v2/courses/{id}/documents` | 文档列表 / 上传（md、txt、pdf、docx、pptx） |
 | GET | `/api/v2/documents/{id}/chunks` | 分块预览 |
 | POST | `/api/v2/search` | BM25 + 向量 + RRF 检索 |
-
-`GET /health` 会带 `vector_mode`（`hash` / `remote`）与 `embedder` 标签，用于确认当前生效的向量通道。
 | GET | `/api/v2/sources/{chunk_id}` | 引用片段与相邻原文 |
-| POST | `/api/v2/chat-sessions/{id}/runs` | 创建一次问答运行（202） |
-| GET | `/api/v2/chat-sessions` | 会话列表，含每个会话最近一次运行 |
+| POST | `/api/v2/chat-sessions/{id}/runs` | 创建一次问答运行（202），会话归属须与 `user_key` 一致 |
+| GET | `/api/v2/chat-sessions` | 会话列表，含每个会话最近一次运行；`user_key` 必填 |
 | GET | `/api/v2/runs/{id}` | 运行详情：答案、引用、卡片、待审批输入 |
 | GET | `/api/v2/runs/{id}/steps` | 运行事件回放（前端恢复历史任务） |
 | GET | `/api/v2/runs/{id}/events` | SSE：计划、工具调用、观察、token、审批、终态 |
@@ -68,6 +66,10 @@ Embedding 是可选通道，默认关闭：
 | POST | `/api/v2/practice/attempts` | 提交作答，即时判分并返回正确答案、解析与出处 |
 | GET | `/api/v2/practice/attempts` | 作答历史（题干、对错、时间） |
 | GET | `/api/v2/practice/stats` | 练习统计：总正确率、按章节正确率、错题次数排行 |
+
+`GET /health` 会带 `vector_mode`（`hash` / `remote`）与 `embedder` 标签，用于确认当前生效的向量通道。
+
+多租户：`/runs/{id}`、`/runs/{id}/steps`、`/runs/{id}/events`、`/runs/{id}/inputs`、`/runs/{id}/cancel`、`/chat-sessions/{id}/messages` 都要求 `?user_key=`，缺参数返回 422，归属不符统一 404（不区分"不存在"和"不是你的"）。
 
 ## 测试
 
@@ -116,6 +118,7 @@ uv run python -m app.reset_demo --documents  # 同时移除后台上传的文档
 - 画像不落库，只给 `runs` 加了一列 `user_key`（默认 `demo_user`），由 `db._ensure_columns()` 补列，旧库无需重建。
 - 多身份：前端顶栏可切 `demo_user`（李金阳）/ `stu_lin`（林晓）/ `stu_zhao`（赵一鸣），`Run.user_key` 与 `Attempt.user_key` 都取自这个选择；教师端 `/analytics/concepts` 不传 `user_key`，看到的就是全班。
 - 会话隔离：`ChatSession.user_key` 决定会话归属，`GET /chat-sessions?user_key=` 只返回本人会话；新建 run 继承会话的 `user_key`，不采信请求体，避免同一会话里混入别人的运行。
+- 租户校验：所有按 id 读取或写入运行的接口都要带 `user_key`，归属不符返回 404；启动时 `_sync_run_owner` 会把早期版本留下的「run 归属与会话归属不一致」按会话对齐一次，幂等。
 - 演示数据：`python -m app.seed_students` 幂等写入两名示例学生的作答，方便对比「弱学生」与「强学生」。
 
 ## 目录
