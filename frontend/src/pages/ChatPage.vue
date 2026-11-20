@@ -263,7 +263,7 @@ async function openTask(task: Task) {
   selectedId.value = task.id
   if (demoIds.has(task.id)) return
   try {
-    const detail = await api.get<RunDetail>(`/runs/${task.id}`)
+    const detail = await api.get<RunDetail>(`/runs/${task.id}?user_key=${currentKey.value}`)
     task.answer = detail.answer_markdown || task.answer
     task.status = statusOf(detail.status)
     task.pending = detail.pending_input
@@ -275,7 +275,7 @@ async function openTask(task: Task) {
       prefix.value = Number(calcCard.data.prefix ?? prefix.value)
     }
     const history = await api.get<{ items: { type: string; payload: RunEventPayload }[] }>(
-      `/runs/${task.id}/steps`,
+      `/runs/${task.id}/steps?user_key=${currentKey.value}`,
     )
     task.steps = []
     for (const entry of history.items) applyEvent(task, entry.type, entry.payload)
@@ -355,7 +355,7 @@ async function follow(task: Task, runId: string, afterSeq: number) {
         applyEvent(task, type, payload)
         if (type === 'input.required') controller.abort()
       },
-      { afterSeq, signal: controller.signal },
+      { afterSeq, signal: controller.signal, userKey: currentKey.value },
     )
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') return
@@ -369,7 +369,7 @@ async function decide(approved: boolean) {
   if (!task || !pending || streaming.value) return
   streaming.value = true
   try {
-    await api.post(`/runs/${task.id}/inputs`, {
+    await api.post(`/runs/${task.id}/inputs?user_key=${currentKey.value}`, {
       input_id: pending.input_id,
       approved,
     })

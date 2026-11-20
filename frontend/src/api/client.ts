@@ -112,12 +112,14 @@ export type RunEventHandler = (type: string, payload: RunEventPayload) => void
 export async function streamRunEvents(
   runId: string,
   onEvent: RunEventHandler,
-  options: { afterSeq?: number; signal?: AbortSignal } = {},
+  options: { afterSeq?: number; signal?: AbortSignal; userKey?: string } = {},
 ): Promise<void> {
-  const response = await fetch(
-    `${BASE}/runs/${runId}/events?after_seq=${options.afterSeq ?? 0}`,
-    { signal: options.signal, headers: { Accept: 'text/event-stream' } },
-  )
+  const query = new URLSearchParams({ after_seq: String(options.afterSeq ?? 0) })
+  if (options.userKey) query.set('user_key', options.userKey)
+  const response = await fetch(`${BASE}/runs/${runId}/events?${query.toString()}`, {
+    signal: options.signal,
+    headers: { Accept: 'text/event-stream' },
+  })
   if (!response.ok || !response.body) {
     throw new ApiError(response.status, 'SSE_FAILED', '事件流连接失败')
   }
