@@ -943,4 +943,98 @@ async def practice_stats(
     }
 
 
+@router.get("/practice/wrongbook")
+async def practice_wrongbook(
+    session: SessionDep,
+    course_id: str = COURSE_ID,
+    user_key: str = Query(..., min_length=1),
+    limit: int = Query(30, ge=1, le=100),
+) -> dict:
+    """错题本：只保留「最近一次作答仍是错」的题，重做对了自动移出。"""
+    attempts = (
+        await session.execute(
+            select(Attempt)
+            .where(Attempt.course_id == course_id, Attempt.user_key == user_key)
+            .order_by(Attempt.created_at)
+        )
+    ).scalars().all()
+    questions = {
+        question.id: question
+        for question in (await session.execute(select(Question).where(Question.course_id == course_id))).scalars().all()
+    }
+    concepts = {
+        concept.id: concept
+        for concept in (await session.execute(select(Concept).where(Concept.course_id == course_id))).scalars().all()
+    }
+    chapters = {
+        chapter.id: chapter
+        for chapter in (await session.execute(select(Chapter).where(Chapter.course_id == course_id))).scalars().all()
+    }
+
+    latest: dict[str, Attempt] = {}
+    wrong_count: dict[str, int] = {}
+    total_count: dict[str, int] = {}
+    for attempt in attempts:
+        latest[attempt.question_id] = attempt
+        total_count[attempt.question_id] = total_count.get(attempt.question_id, 0) + 1
+        if not attempt.is_correct:
+            wrong_count[attempt.question_id] = wrong_count.get(attempt.question_id, 0) + 1
+
+    items = []
+    for question_id, attempt in latest.items():
+        if attempt.is_correct:
+            continue
+        question = questions.get(question_id)
+        if question is None:
+            continue
+        concept = concepts.get(question.concept_id or "")
+        chapter = chapters.get(question.chapter_id)
+        items.append(
+            {
+                "question_id": question.id,
+                "stem": question.stem,
+                "type": question.type,
+                "image_url": question.image_url,
+                "concept_id": question.concept_id,
+                "concept_title": concept.title if concept else "未挂知识点",
+                "chapter_id": question.chapter_id,
+                "chapter_title": chapter.title if chapter else "未挂章节",
+                "wrong": wrong_count.get(question_id, 0),
+                "attempts": total_count.get(question_id, 0),
+                "last_wrong_at": iso(attempt.created_at),
+            }
+        )
+    items.sort(key=lambda item: (-item["wrong"], item["last_wrong_at"]))
+
+    groups: dict[str, dict] = {}
+    for item in items:
+        bucket = groups.setdefault(
+            item["concept_id"] or "",
+            {
+                "concept_id": item["concept_id"],
+                "title": item["concept_title"],
+                "chapter_title": item["chapter_title"],
+                "wrong": 0,
+                "items": [],
+            },
+        )
+        bucket["wrong"] = int(bucket["wrong"]) + 1
+        bucket["items"].append(item)
+
+    solved = sum(
+        1
+        for question_id, attempt in latest.items()
+        if attempt.is_correct and wrong_count.get(question_id)
+    )
+    ordered_groups = sorted(groups.values(), key=lambda group: (-int(group["wrong"]), group["title"]))
+    return {
+        "user_key": user_key,
+        "unresolved": len(items),
+        "solved": solved,
+        "concepts_affected": len(ordered_groups),
+        "groups": ordered_groups,
+        "items": items[:limit],
+    }
+
+
 from app.db import SessionFactory as AsyncSessionLocal  # noqa: E402
