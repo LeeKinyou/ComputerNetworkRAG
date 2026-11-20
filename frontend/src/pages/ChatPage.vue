@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import MarkdownIt from 'markdown-it'
 import {
   Activity,
@@ -39,6 +39,7 @@ import {
 import { useStudent } from '@/composables/useStudent'
 
 const route = useRoute()
+const router = useRouter()
 const { currentKey } = useStudent()
 const localTasks = ref<Task[]>(JSON.parse(JSON.stringify(seedTasks)))
 const selectedId = ref<string>(seedTasks[0].id)
@@ -393,11 +394,24 @@ function toSource(item: Evidence): SourceRef {
   return {
     id: item.chunk_id,
     chunkId: item.chunk_id,
+    documentId: item.document_id,
     doc: item.title,
     locator: locator || '课程原文',
     score: Number(item.score ?? 0),
     text: item.excerpt ?? '',
   }
+}
+
+function locateSource(source: SourceRef) {
+  if (!source.documentId) {
+    notify(`已定位到 ${source.locator}`)
+    return
+  }
+  // 走知识库：打开对应文档并高亮这段切片，形成「回答 → 原文」的可追溯链路
+  void router.push({
+    path: '/documents',
+    query: { doc: source.documentId, chunk: source.chunkId },
+  })
 }
 
 function toArtifact(card: Card, index: number, task: Task): Artifact {
@@ -952,8 +966,9 @@ function applyEvent(task: Task, type: string, payload: RunEventPayload) {
             <button
               v-for="s in activeTask.sources"
               :key="s.id"
+              :data-source="s.chunkId"
               class="rounded-xl border border-line bg-surface px-3 py-2.5 text-left transition-colors hover:border-brand/35"
-              @click="notify(`已定位到 ${s.locator}`)"
+              @click="locateSource(s)"
             >
               <div class="flex items-center justify-between gap-2">
                 <span class="flex min-w-0 items-center gap-1.5 text-[10.5px] text-subink">

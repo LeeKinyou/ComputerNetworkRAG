@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { RouterLink, useRoute } from 'vue-router'
 import {
   BookMarked,
   ChevronRight,
+  CornerDownRight,
   FileCode2,
   FileText,
   FileType2,
@@ -16,6 +17,7 @@ import {
 import { ApiError, api, type DocumentCitations, type DocumentSummary } from '@/api/client'
 
 const COURSE_ID = 'course_cn'
+const route = useRoute()
 
 interface DocRow {
   id: string
@@ -56,6 +58,8 @@ const selectedId = ref('')
 const chunkList = ref<{ id: string; text: string; topic: string; score: number }[]>([])
 const citationInfo = ref<DocumentCitations | null>(null)
 const citationsLoading = ref(false)
+// 从问答页「引用原文 → 定位」跳过来时，高亮这一段切片
+const highlightChunk = ref('')
 const uploading = ref(false)
 const deleting = ref(false)
 const loading = ref(true)
@@ -134,7 +138,11 @@ async function loadDocs() {
     ])
     chapters.value = chapterList.items
     docList.value = documents.items.map(mapDoc)
-    if (!selectedId.value || !docList.value.some((item) => item.id === selectedId.value)) {
+    highlightChunk.value = typeof route.query.chunk === 'string' ? route.query.chunk : ''
+    const queryDoc = typeof route.query.doc === 'string' ? route.query.doc : ''
+    if (queryDoc && docList.value.some((item) => item.id === queryDoc)) {
+      selectedId.value = queryDoc
+    } else if (!selectedId.value || !docList.value.some((item) => item.id === selectedId.value)) {
       selectedId.value = docList.value[0]?.id ?? ''
     }
     notice.value = ''
@@ -166,7 +174,15 @@ async function loadChunks() {
     }))
   } catch {
     chunkList.value = []
+  } finally {
+    void nextTick(focusChunk)
   }
+}
+
+function focusChunk() {
+  if (!highlightChunk.value) return
+  const target = document.querySelector(`[data-chunk="${highlightChunk.value}"]`)
+  if (target) target.scrollIntoView({ block: 'center', behavior: 'smooth' })
 }
 
 async function loadCitations() {
@@ -414,6 +430,14 @@ onMounted(() => {
           </div>
         </div>
 
+        <div
+          v-if="highlightChunk"
+          class="flex items-center gap-1.5 border-b border-line bg-brand-soft/25 px-4 py-2 text-[9.5px] text-brand"
+        >
+          <CornerDownRight :size="11" />
+          从问答的「引用原文」跳转，已定位并高亮这段切片
+        </div>
+
         <div class="min-h-0 flex-1 overflow-y-auto p-3">
           <div class="mb-2 flex items-center gap-1.5 px-1 text-[9.5px] text-muted">
             <BookMarked :size="11" />
@@ -426,7 +450,13 @@ onMounted(() => {
             <article
               v-for="chunk in chunkList"
               :key="chunk.id"
-              class="rounded-xl border border-line bg-surface px-3 py-2.5 transition-colors hover:border-line-strong"
+              :data-chunk="chunk.id"
+              class="rounded-xl border bg-surface px-3 py-2.5 transition-colors hover:border-line-strong"
+              :class="
+                highlightChunk === chunk.id
+                  ? 'border-brand/60 bg-brand-soft/30 shadow-[0_0_0_1px_rgba(37,99,235,0.12)]'
+                  : 'border-line'
+              "
             >
               <div class="flex items-center justify-between gap-2">
                 <span class="truncate rounded-full bg-brand-soft px-1.5 py-0.5 text-[9px] text-brand">

@@ -31,6 +31,7 @@ export interface Artifact {
 export interface SourceRef {
   id: string
   chunkId: string
+  documentId?: string
   doc: string
   locator: string
   score: number
