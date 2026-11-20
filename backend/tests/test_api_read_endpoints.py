@@ -238,3 +238,19 @@ async def test_document_citations_count_runs_chunks_and_dedupe_questions(api):
     doc = listing.json()["items"][0]
     assert doc["id"] == "d1"
     assert doc["citation_count"] == 3
+
+
+async def test_questions_can_be_scoped_to_given_ids(api):
+    client, factory = api
+    await seed_course(factory)
+
+    response = await client.get(
+        "/api/v2/questions",
+        params={"question_ids": "q_arp,q_dns", "limit": 3, "shuffle": False},
+    )
+    assert response.status_code == 200
+    assert {item["id"] for item in response.json()["items"]} == {"q_arp", "q_dns"}
+
+    # 不存在的 id 会被库里过滤掉，只剩真实题目
+    response = await client.get("/api/v2/questions", params={"question_ids": "q_arp,missing", "limit": 3})
+    assert [item["id"] for item in response.json()["items"]] == ["q_arp"]
