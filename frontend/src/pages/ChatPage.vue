@@ -435,11 +435,15 @@ function applyEvent(task: Task, type: string, payload: RunEventPayload) {
         : payload.error_code
           ? `返回 ${payload.error_code}`
           : '工具返回结果'
+      const boost = Array.isArray(payload.profile_boost) ? payload.profile_boost.length : 0
+      const detail: string[] = []
+      if (payload.elapsed_ms) detail.push(`耗时 ${payload.elapsed_ms}ms`)
+      if (boost) detail.push(`薄弱章节加权 ${boost} 个`)
       task.steps.push({
         id: `s${payload.seq}`,
         kind: 'observation',
         title: summary.length > 48 ? `${summary.slice(0, 48)}…` : summary,
-        detail: payload.elapsed_ms ? `耗时 ${payload.elapsed_ms}ms` : String(payload.tool ?? ''),
+        detail: detail.join(' · ') || String(payload.tool ?? ''),
         ms: Number(payload.elapsed_ms ?? 0),
         status: payload.status === 'error' ? 'failed' : 'ok',
       })
