@@ -70,6 +70,37 @@ export interface AttemptResult {
   stats: { total: number; correct: number; rate: number }
 }
 
+export interface WrongBookItem {
+  question_id: string
+  stem: string
+  type: 'single' | 'judge'
+  image_url?: string | null
+  concept_id: string | null
+  concept_title: string
+  chapter_id: string
+  chapter_title: string
+  wrong: number
+  attempts: number
+  last_wrong_at: string
+}
+
+export interface WrongBookGroup {
+  concept_id: string | null
+  title: string
+  chapter_title: string
+  wrong: number
+  items: WrongBookItem[]
+}
+
+export interface WrongBook {
+  user_key: string
+  unresolved: number
+  solved: number
+  concepts_affected: number
+  groups: WrongBookGroup[]
+  items: WrongBookItem[]
+}
+
 const BASE = '/api/v2'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

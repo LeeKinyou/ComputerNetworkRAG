@@ -9,6 +9,7 @@ const router = createRouter({
     { path: '/rag', redirect: { path: '/chat', query: { mode: 'rag' } } },
     { path: '/chat', name: 'chat', component: () => import('@/pages/ChatPage.vue') },
     { path: '/practice', name: 'practice', component: () => import('@/pages/PracticePage.vue') },
+    { path: '/wrongbook', name: 'wrongbook', component: () => import('@/pages/WrongBookPage.vue') },
     { path: '/documents', name: 'documents', component: () => import('@/pages/DocumentsPage.vue') },
     { path: '/progress', name: 'progress', component: () => import('@/pages/ProgressPage.vue') },
     { path: '/insights', name: 'insights', component: () => import('@/pages/InsightsPage.vue') },

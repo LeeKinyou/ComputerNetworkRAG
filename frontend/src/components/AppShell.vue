@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import {
   BarChart3,
+  BookMarked,
   BookOpen,
   Bot,
   ChevronDown,
@@ -36,6 +37,7 @@ const navGroups = [
       { to: '/', label: '工作台', icon: LayoutDashboard },
       { to: '/chat', label: '智能问答', icon: Bot },
       { to: '/practice', label: '练习中心', icon: PenLine },
+      { to: '/wrongbook', label: '错题本', icon: BookMarked },
       { to: '/graph', label: '知识图谱', icon: Waypoints },
       { to: '/path', label: '学习计划', icon: Route },
       { to: '/documents', label: '知识库', icon: BookOpen },
@@ -56,6 +58,7 @@ const labels: Record<string, string> = {
   graph: '知识图谱',
   path: '学习计划',
   documents: '知识库',
+  wrongbook: '错题本',
   progress: '学习报告',
   insights: '学情分析',
   profile: '我的',
