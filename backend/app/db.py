@@ -62,6 +62,14 @@ def _ensure_columns(connection) -> None:
             connection.execute(
                 text("ALTER TABLE runs ADD COLUMN user_key VARCHAR(64) DEFAULT 'demo_user'")
             )
+    if "chat_sessions" in tables:
+        columns = {column["name"] for column in inspector.get_columns("chat_sessions")}
+        if "user_key" not in columns:
+            connection.execute(
+                text(
+                    "ALTER TABLE chat_sessions ADD COLUMN user_key VARCHAR(64) DEFAULT 'demo_user'"
+                )
+            )
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:

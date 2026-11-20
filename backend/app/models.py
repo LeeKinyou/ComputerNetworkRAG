@@ -92,6 +92,7 @@ class ChatSession(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     course_id: Mapped[str] = mapped_column(String(36), index=True)
     title: Mapped[str] = mapped_column(String(200), default="新会话")
+    user_key: Mapped[str] = mapped_column(String(64), default="demo_user", index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 

@@ -44,6 +44,7 @@ class RunInput(BaseModel):
 class SessionCreate(BaseModel):
     course_id: str = COURSE_ID
     title: str | None = None
+    user_key: str = Field(default="demo_user", max_length=64)
 
 
 class SearchRequest(BaseModel):
@@ -289,6 +290,7 @@ async def create_session(payload: SessionCreate, session: SessionDep) -> dict:
         id=new_id(),
         course_id=payload.course_id,
         title=payload.title or "新会话",
+        user_key=payload.user_key,
     )
     session.add(chat)
     await session.commit()
@@ -296,10 +298,16 @@ async def create_session(payload: SessionCreate, session: SessionDep) -> dict:
 
 
 @router.get("/chat-sessions")
-async def list_sessions(session: SessionDep, course_id: str | None = None) -> dict:
+async def list_sessions(
+    session: SessionDep,
+    course_id: str | None = None,
+    user_key: str | None = None,
+) -> dict:
     query = select(ChatSession).order_by(ChatSession.created_at.desc())
     if course_id:
         query = query.where(ChatSession.course_id == course_id)
+    if user_key:
+        query = query.where(ChatSession.user_key == user_key)
     sessions = (await session.execute(query)).scalars().all()
     items = []
     for item in sessions:
@@ -350,7 +358,7 @@ async def create_run(session_id: str, payload: RunCreate, session: SessionDep) -
         session_id=session_id,
         course_id=chat.course_id,
         mode=payload.mode,
-        user_key=payload.user_key,
+        user_key=chat.user_key or payload.user_key,
         question=payload.message,
         status="queued",
     )
