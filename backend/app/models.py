@@ -172,3 +172,83 @@ class Attempt(Base):
     answer: Mapped[str] = mapped_column(String(8))
     is_correct: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class Assignment(Base):
+    """一份作业：题目项、截止时间与发布状态。学生提交见 Submission。"""
+
+    __tablename__ = "assignments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    course_id: Mapped[str] = mapped_column(String(36), index=True)
+    chapter_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(Text, default="")
+    due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    total_score: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(16), default="published")  # draft / published / closed
+    created_by: Mapped[str] = mapped_column(String(64), default="")
+    source_filename: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AssignmentItem(Base):
+    """作业题目项：简答/计算，带参考答案与评分要点。"""
+
+    __tablename__ = "assignment_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    assignment_id: Mapped[str] = mapped_column(
+        ForeignKey("assignments.id", ondelete="CASCADE"), index=True
+    )
+    ordinal: Mapped[int] = mapped_column(Integer, default=1)
+    type: Mapped[str] = mapped_column(String(16), default="short")  # short / calc
+    stem: Mapped[str] = mapped_column(Text)
+    reference: Mapped[str] = mapped_column(Text, default="")
+    rubric: Mapped[list] = mapped_column(JSON, default=list)  # [{"text","score"}]
+    score: Mapped[int] = mapped_column(Integer, default=10)
+    concept_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    difficulty: Mapped[str] = mapped_column(String(16), default="medium")
+
+
+class Submission(Base):
+    """一个学生对一份作业的提交；同作业同学生只保留一条。"""
+
+    __tablename__ = "submissions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    assignment_id: Mapped[str] = mapped_column(
+        ForeignKey("assignments.id", ondelete="CASCADE"), index=True
+    )
+    course_id: Mapped[str] = mapped_column(String(36), index=True)
+    user_key: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="submitted")  # submitted/grading/graded/failed
+    score: Mapped[int] = mapped_column(Integer, default=0)
+    max_score: Mapped[int] = mapped_column(Integer, default=0)
+    source: Mapped[str] = mapped_column(String(16), default="llm")  # llm / rule / mixed / teacher
+    overall_comment: Mapped[str] = mapped_column(Text, default="")
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    graded_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class SubmissionItem(Base):
+    """单题批改结果：得分、要点命中与评语。"""
+
+    __tablename__ = "submission_items"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    submission_id: Mapped[str] = mapped_column(
+        ForeignKey("submissions.id", ondelete="CASCADE"), index=True
+    )
+    item_id: Mapped[str] = mapped_column(
+        ForeignKey("assignment_items.id", ondelete="CASCADE"), index=True
+    )
+    answer_text: Mapped[str] = mapped_column(Text, default="")
+    score: Mapped[int] = mapped_column(Integer, default=0)
+    max_score: Mapped[int] = mapped_column(Integer, default=0)
+    verdict: Mapped[str] = mapped_column(String(16), default="wrong")  # correct / partial / wrong
+    feedback: Mapped[str] = mapped_column(Text, default="")
+    points: Mapped[list] = mapped_column(JSON, default=list)
+    source: Mapped[str] = mapped_column(String(16), default="llm")
+    needs_review: Mapped[bool] = mapped_column(Boolean, default=False)

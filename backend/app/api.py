@@ -6,7 +6,7 @@ import asyncio
 import json
 import random
 from collections import Counter
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
@@ -28,7 +28,26 @@ from app.auth import (
 from app.config import settings
 from app.db import get_session
 from app.ingest import IngestError, ingest_document
-from app.models import Attempt, Chapter, ChatSession, Chunk, Concept, ConceptEdge, Course, Document, Message, Question, Run, RunStep
+from app.assignment_import import AssignmentImportError, parse_assignment_text
+from app.grader import grade_item, rule_grade
+from app.models import (
+    Assignment,
+    AssignmentItem,
+    Attempt,
+    Chapter,
+    ChatSession,
+    Chunk,
+    Concept,
+    ConceptEdge,
+    Course,
+    Document,
+    Message,
+    Question,
+    Run,
+    RunStep,
+    Submission,
+    SubmissionItem,
+)
 from app.practice import answer_summary
 from app.profile import build_profile
 from app.retrieval import retriever
@@ -1390,6 +1409,128 @@ async def learning_next(
             return "还没练过"
         return f"正确率 {item['rate']}%"
 
+    # 作业节点：未提交的按截止时间排最前，已批低分的转成概念补练
+    now = utcnow()
+    assignments = (
+        await session.execute(select(Assignment).where(Assignment.course_id == course_id))
+    ).scalars().all()
+    items_by_assignment: dict[str, list[AssignmentItem]] = {}
+    if assignments:
+        for row in (
+            await session.execute(
+                select(AssignmentItem).where(
+                    AssignmentItem.assignment_id.in_([assignment.id for assignment in assignments])
+                )
+            )
+        ).scalars().all():
+            items_by_assignment.setdefault(row.assignment_id, []).append(row)
+
+    subs = (
+        await session.execute(
+            select(Submission).where(Submission.course_id == course_id, Submission.user_key == user_key)
+        )
+    ).scalars().all()
+    subs_by_assignment = {sub.assignment_id: sub for sub in subs}
+    sub_rows_by_submission: dict[str, list[SubmissionItem]] = {}
+    if subs:
+        for row in (
+            await session.execute(
+                select(SubmissionItem).where(
+                    SubmissionItem.submission_id.in_([sub.id for sub in subs])
+                )
+            )
+        ).scalars().all():
+            sub_rows_by_submission.setdefault(row.submission_id, []).append(row)
+
+    assignment_tasks: list[dict] = []
+    for assignment in assignments:
+        if assignment.status != "published":
+            continue
+        item_rows = items_by_assignment.get(assignment.id, [])
+        mine = subs_by_assignment.get(assignment.id)
+
+        if mine is None:
+            overdue = bool(assignment.due_at and assignment.due_at < now)
+            soon = bool(assignment.due_at and assignment.due_at - now <= timedelta(days=7))
+            if not (overdue or soon):
+                continue
+            if not assignment.due_at:
+                reason = "未提交"
+            elif overdue:
+                reason = "已逾期 · 未提交"
+            else:
+                # 按本地日期算"今天/明天"，避免 UTC 存储导致文案差一天
+                local_due = assignment.due_at.replace(tzinfo=UTC).astimezone()
+                days_left = (local_due.date() - datetime.now(UTC).astimezone().date()).days
+                if days_left <= 0:
+                    reason = "今天截止 · 未提交"
+                elif days_left == 1:
+                    reason = "明天截止 · 未提交"
+                else:
+                    reason = f"{local_due.month} 月 {local_due.day} 日截止 · 未提交"
+            assignment_tasks.append(
+                {
+                    "kind": "assignment",
+                    "assignment_id": assignment.id,
+                    "concept_id": None,
+                    "title": assignment.title,
+                    "chapter_id": assignment.chapter_id,
+                    "chapter_title": chapters.get(assignment.chapter_id or "").title
+                    if chapters.get(assignment.chapter_id or "")
+                    else "作业",
+                    "state": "todo",
+                    "rate": 0,
+                    "attempts": 0,
+                    "action": "submit",
+                    "reason": reason,
+                    "minutes": min(30, max(10, len(item_rows) * 5)),
+                    "due_at": iso(assignment.due_at),
+                    "priority": 0,
+                    "overdue": overdue,
+                }
+            )
+            continue
+
+        if mine.status != "graded" or not mine.max_score:
+            continue
+        rate = round(mine.score * 100 / mine.max_score)
+        if rate >= 60:
+            continue
+
+        items_map = {row.id: row for row in item_rows}
+        weak_concepts: list[str] = []
+        for sub_row in sub_rows_by_submission.get(mine.id, []):
+            item = items_map.get(sub_row.item_id)
+            if not item or not item.concept_id:
+                continue
+            if sub_row.max_score and sub_row.score * 100 / sub_row.max_score < 60:
+                weak_concepts.append(item.concept_id)
+        for concept_id in list(dict.fromkeys(weak_concepts))[:2]:
+            concept = concepts.get(concept_id)
+            if concept is None:
+                continue
+            assignment_tasks.append(
+                {
+                    "kind": "concept",
+                    "assignment_id": assignment.id,
+                    "concept_id": concept_id,
+                    "title": concept["title"],
+                    "chapter_id": concept.get("chapter_id"),
+                    "chapter_title": chapters.get(concept.get("chapter_id") or "").title
+                    if chapters.get(concept.get("chapter_id") or "")
+                    else "作业",
+                    "state": concept["state"],
+                    "rate": concept["rate"],
+                    "attempts": concept["attempts"],
+                    "action": "practice",
+                    "reason": f"《{assignment.title}》得分率 {rate}% · 补练",
+                    "minutes": 15,
+                    "due_at": None,
+                    "priority": 1,
+                    "overdue": False,
+                }
+            )
+
     order = {"weak": 0, "no_data": 1, "normal": 2}
     candidates = sorted(
         (item for item in profile["concepts"] if item["state"] in order),
@@ -1453,6 +1594,40 @@ async def learning_next(
     chapter_rows.sort(key=lambda row: row["chapter_id"])
 
     all_items = profile["concepts"]
+    for task in tasks:
+        task.setdefault("kind", "concept")
+        task.setdefault("priority", {"weak": 2, "no_data": 3, "normal": 4}.get(task["state"], 4))
+        task.setdefault("due_at", None)
+        task.setdefault("assignment_id", None)
+        task.setdefault("overdue", False)
+
+    # 概念任务保留原有生成顺序（其中已含先修优先与 state 优先），作业任务整体排在前面
+    assignment_tasks.sort(key=lambda task: (task["priority"], task.get("due_at") or "9999"))
+    ordered = assignment_tasks + tasks
+
+    week: list[dict] = []
+    minutes = 0
+    rest_index = len(ordered)
+    for index, task in enumerate(ordered):
+        if len(week) >= 4:
+            rest_index = index
+            break
+        if week and minutes + task["minutes"] > 90:
+            rest_index = index
+            break
+        week.append(task)
+        minutes += task["minutes"]
+    rest = ordered[rest_index : rest_index + 4]
+
+    if week and week[0]["kind"] == "assignment":
+        goal = f"先把《{week[0]['title']}》交掉"
+        if len(week) > 1:
+            goal += f"，再补{week[1]['title']}"
+    elif week:
+        goal = f"先补{week[0]['title']}"
+    else:
+        goal = "暂无待办"
+
     return {
         "user_key": user_key,
         "summary": {
@@ -1465,9 +1640,706 @@ async def learning_next(
             "total": len(all_items),
         },
         "recent_attempts": int(recent),
-        "tasks": tasks,
+        "tasks": week,
+        "stages": [
+            {
+                "key": "this_week",
+                "title": "本周",
+                "goal": goal[:48],
+                "minutes": minutes,
+                "tasks": week,
+            },
+            {
+                "key": "next",
+                "title": "接下来",
+                "goal": "",
+                "minutes": sum(task["minutes"] for task in rest),
+                "tasks": rest,
+            },
+        ],
         "chapters": chapter_rows,
     }
+
+
+class AssignmentItemIn(BaseModel):
+    type: str = "short"
+    stem: str = Field(min_length=1, max_length=4000)
+    reference: str = Field(default="", max_length=4000)
+    rubric: list[dict] = Field(default_factory=list)
+    score: int = Field(default=10, ge=1, le=100)
+    concept_id: str | None = Field(default=None, max_length=36)
+    difficulty: str = "medium"
+
+
+class AssignmentCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=4000)
+    chapter_id: str | None = Field(default=None, max_length=36)
+    due_at: datetime | None = None
+    status: str = "published"
+    items: list[AssignmentItemIn]
+
+
+class SubmissionCreate(BaseModel):
+    items: list[dict] = Field(default_factory=list)
+
+
+class SubmissionItemPatch(BaseModel):
+    score: int | None = Field(default=None, ge=0, le=100)
+    feedback: str | None = Field(default=None, max_length=200)
+
+
+def _is_teacher(request: Request) -> bool:
+    """AUTH_ENABLED=false 的本地演示按教师权限处理，便于单机走通全流程。"""
+    account = current_account(request)
+    return account is None or account.role == "teacher"
+
+
+def _require_teacher_request(request: Request) -> None:
+    if not _is_teacher(request):
+        raise _fail(403, "FORBIDDEN", "仅教师可操作作业")
+
+
+def _parse_due(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise _fail(400, "INVALID_DUE_AT", "截止时间格式应为 ISO 8601") from exc
+    if parsed.tzinfo is None:
+        return parsed
+    return parsed.astimezone(UTC).replace(tzinfo=None)
+
+
+def _validate_items(items: list[AssignmentItemIn]) -> list[dict]:
+    if not items:
+        raise _fail(400, "EMPTY_ASSIGNMENT", "作业至少需要一道题")
+    validated: list[dict] = []
+    for index, item in enumerate(items, start=1):
+        if item.type not in ("short", "calc"):
+            raise _fail(400, "INVALID_ITEM_TYPE", f"第 {index} 题类型只能是 short 或 calc")
+        rubric = [
+            {"text": str(entry.get("text", "")).strip(), "score": int(entry.get("score", 0))}
+            for entry in item.rubric
+            if isinstance(entry, dict)
+        ]
+        rubric = [entry for entry in rubric if entry["text"] and entry["score"] > 0]
+        if not rubric:
+            rubric = [{"text": item.reference.strip() or "完整作答", "score": item.score}]
+        if sum(entry["score"] for entry in rubric) != item.score:
+            raise _fail(400, "INVALID_RUBRIC", f"第 {index} 题评分要点合计应等于 {item.score} 分")
+        validated.append(
+            {
+                "ordinal": index,
+                "type": item.type,
+                "stem": item.stem.strip(),
+                "reference": item.reference.strip(),
+                "rubric": rubric,
+                "score": item.score,
+                "concept_id": item.concept_id,
+                "difficulty": item.difficulty,
+            }
+        )
+    return validated
+
+
+def _item_payload(row: AssignmentItem, teacher: bool) -> dict:
+    payload = {
+        "id": row.id,
+        "ordinal": row.ordinal,
+        "type": row.type,
+        "stem": row.stem,
+        "score": row.score,
+        "concept_id": row.concept_id,
+        "difficulty": row.difficulty,
+    }
+    if teacher:
+        payload["reference"] = row.reference
+        payload["rubric"] = row.rubric or []
+    return payload
+
+
+async def _load_assignment(session: AsyncSession, assignment_id: str) -> tuple[Assignment, list[AssignmentItem]]:
+    assignment = await session.get(Assignment, assignment_id)
+    if assignment is None:
+        raise _fail(404, "ASSIGNMENT_NOT_FOUND", "作业不存在")
+    items = (
+        await session.execute(
+            select(AssignmentItem)
+            .where(AssignmentItem.assignment_id == assignment_id)
+            .order_by(AssignmentItem.ordinal)
+        )
+    ).scalars().all()
+    return assignment, list(items)
+
+
+def _summarize_source(sources: list[str]) -> str:
+    unique = set(sources)
+    if not unique:
+        return "rule"
+    if "teacher" in unique:
+        return "teacher"
+    if unique == {"llm"}:
+        return "llm"
+    if unique == {"rule"}:
+        return "rule"
+    return "mixed"
+
+
+def _overall_comment(score: int, max_score: int, review_count: int, total: int) -> str:
+    rate = round(score * 100 / max_score) if max_score else 0
+    text = f"得分 {score}/{max_score}（{rate}%）"
+    if review_count:
+        text += f"，{review_count}/{total} 题待复核"
+    return text[:80]
+
+
+async def _persist_grade(
+    session: AsyncSession,
+    submission: Submission,
+    items: list[AssignmentItem],
+    answers: dict[str, str],
+    results: list[dict],
+) -> None:
+    await session.execute(delete(SubmissionItem).where(SubmissionItem.submission_id == submission.id))
+    for item, result in zip(items, results):
+        session.add(
+            SubmissionItem(
+                id=new_id(),
+                submission_id=submission.id,
+                item_id=item.id,
+                answer_text=answers.get(item.id, ""),
+                score=result["score"],
+                max_score=item.score,
+                verdict=result["verdict"],
+                feedback=result.get("feedback", ""),
+                points=result.get("points", []),
+                source=result.get("source", "rule"),
+                needs_review=bool(result.get("needs_review")),
+            )
+        )
+    submission.score = sum(int(result["score"]) for result in results)
+    submission.max_score = sum(item.score for item in items)
+    submission.source = _summarize_source([result.get("source", "rule") for result in results])
+    submission.status = "graded"
+    submission.graded_at = utcnow()
+    submission.overall_comment = _overall_comment(
+        submission.score,
+        submission.max_score,
+        sum(1 for result in results if result.get("needs_review")),
+        len(results),
+    )
+
+
+async def _grade_all(items: list[AssignmentItem], answers: dict[str, str]) -> list[dict]:
+    """单份作业内按 3 路并发批改；单题异常退规则，不影响其他题。"""
+    semaphore = asyncio.Semaphore(3)
+
+    async def one(item: AssignmentItem) -> dict:
+        data = {
+            "type": item.type,
+            "stem": item.stem,
+            "reference": item.reference,
+            "rubric": item.rubric or [],
+            "score": item.score,
+        }
+        async with semaphore:
+            try:
+                return await asyncio.wait_for(grade_item(data, answers.get(item.id, "")), timeout=40)
+            except Exception:  # noqa: BLE001
+                fallback = rule_grade(data, answers.get(item.id, ""))
+                fallback["fallback"] = True
+                return fallback
+
+    return list(await asyncio.gather(*(one(item) for item in items)))
+
+
+async def _submission_payload(session: AsyncSession, submission: Submission) -> dict:
+    rows = (
+        await session.execute(
+            select(SubmissionItem).where(SubmissionItem.submission_id == submission.id)
+        )
+    ).scalars().all()
+    item_rows = {
+        row.id: row
+        for row in (
+            await session.execute(
+                select(AssignmentItem).where(AssignmentItem.assignment_id == submission.assignment_id)
+            )
+        ).scalars().all()
+    }
+    ordered = sorted(rows, key=lambda row: item_rows.get(row.item_id).ordinal if row.item_id in item_rows else 0)
+    return {
+        "submission_id": submission.id,
+        "assignment_id": submission.assignment_id,
+        "user_key": submission.user_key,
+        "status": submission.status,
+        "score": submission.score,
+        "max_score": submission.max_score,
+        "source": submission.source,
+        "overall_comment": submission.overall_comment,
+        "error_code": submission.error_code,
+        "submitted_at": iso(submission.submitted_at),
+        "graded_at": iso(submission.graded_at),
+        "items": [
+            {
+                "item_id": row.item_id,
+                "ordinal": item_rows[row.item_id].ordinal if row.item_id in item_rows else 0,
+                "type": item_rows[row.item_id].type if row.item_id in item_rows else "",
+                "stem": item_rows[row.item_id].stem if row.item_id in item_rows else "",
+                "answer": row.answer_text,
+                "score": row.score,
+                "max_score": row.max_score,
+                "verdict": row.verdict,
+                "feedback": row.feedback,
+                "points": row.points or [],
+                "source": row.source,
+                "needs_review": row.needs_review,
+            }
+            for row in ordered
+        ],
+    }
+
+
+async def _create_assignment(
+    session: AsyncSession,
+    *,
+    title: str,
+    description: str,
+    chapter_id: str | None,
+    due_at: datetime | None,
+    status: str,
+    items: list[dict],
+    created_by: str,
+    source_filename: str = "",
+) -> Assignment:
+    if status not in ("draft", "published", "closed"):
+        raise _fail(400, "INVALID_STATUS", "作业状态只能是 draft / published / closed")
+    assignment = Assignment(
+        id=new_id(),
+        course_id=COURSE_ID,
+        chapter_id=chapter_id,
+        title=title.strip(),
+        description=description.strip(),
+        due_at=due_at,
+        total_score=sum(item["score"] for item in items),
+        status=status,
+        created_by=created_by,
+        source_filename=source_filename,
+    )
+    session.add(assignment)
+    await session.flush()
+    for item in items:
+        session.add(
+            AssignmentItem(
+                id=new_id(),
+                assignment_id=assignment.id,
+                ordinal=item["ordinal"],
+                type=item["type"],
+                stem=item["stem"],
+                reference=item["reference"],
+                rubric=item["rubric"],
+                score=item["score"],
+                concept_id=item.get("concept_id"),
+                difficulty=item.get("difficulty", "medium"),
+            )
+        )
+    return assignment
+
+
+@router.get("/assignments")
+async def list_assignments(
+    session: SessionDep,
+    request: Request,
+    course_id: str = COURSE_ID,
+    user_key: str = Depends(scoped_user_key),
+) -> dict:
+    teacher = _is_teacher(request)
+    assignments = (
+        await session.execute(
+            select(Assignment).where(Assignment.course_id == course_id).order_by(Assignment.created_at.desc())
+        )
+    ).scalars().all()
+    if not assignments:
+        return {"items": [], "pending": 0}
+
+    chapters = {
+        row.id: row.title
+        for row in (await session.execute(select(Chapter).where(Chapter.course_id == course_id))).scalars().all()
+    }
+    item_counts: dict[str, int] = {}
+    for assignment_id, count in (
+        await session.execute(
+            select(AssignmentItem.assignment_id, func.count(AssignmentItem.id))
+            .where(AssignmentItem.assignment_id.in_([row.id for row in assignments]))
+            .group_by(AssignmentItem.assignment_id)
+        )
+    ).all():
+        item_counts[assignment_id] = int(count)
+
+    submissions = (
+        await session.execute(select(Submission).where(Submission.course_id == course_id))
+    ).scalars().all()
+
+    rows: list[dict] = []
+    pending = 0
+    for assignment in assignments:
+        row = {
+            "id": assignment.id,
+            "title": assignment.title,
+            "description": assignment.description,
+            "chapter_id": assignment.chapter_id,
+            "chapter_title": chapters.get(assignment.chapter_id or "", ""),
+            "due_at": iso(assignment.due_at),
+            "status": assignment.status,
+            "item_count": item_counts.get(assignment.id, 0),
+            "total_score": assignment.total_score,
+            "source_filename": assignment.source_filename,
+        }
+        if teacher:
+            own = [sub for sub in submissions if sub.assignment_id == assignment.id]
+            graded = [sub for sub in own if sub.status == "graded"]
+            row.update(
+                {
+                    "submitted_count": len(own),
+                    "graded_count": len(graded),
+                    "ungraded_count": sum(1 for sub in own if sub.status != "graded"),
+                    "avg_score": round(sum(sub.score for sub in graded) / len(graded)) if graded else None,
+                }
+            )
+        else:
+            mine = next((sub for sub in submissions if sub.assignment_id == assignment.id and sub.user_key == user_key), None)
+            row.update(
+                {
+                    "my_status": mine.status if mine else "todo",
+                    "my_score": mine.score if mine and mine.status == "graded" else None,
+                    "submission_id": mine.id if mine else None,
+                }
+            )
+            if mine is None and assignment.status == "published":
+                pending += 1
+        rows.append(row)
+    return {"items": rows, "pending": pending}
+
+
+@router.post("/assignments", status_code=201)
+async def create_assignment(
+    payload: AssignmentCreate,
+    session: SessionDep,
+    request: Request,
+) -> dict:
+    _require_teacher_request(request)
+    items = _validate_items(payload.items)
+    account = current_account(request)
+    assignment = await _create_assignment(
+        session,
+        title=payload.title,
+        description=payload.description,
+        chapter_id=payload.chapter_id,
+        due_at=payload.due_at,
+        status=payload.status,
+        items=items,
+        created_by=account.user_key if account else "teacher",
+    )
+    await session.commit()
+    return {"id": assignment.id, "item_count": len(items), "total_score": assignment.total_score}
+
+
+@router.post("/assignments/import", status_code=201)
+async def import_assignment(
+    session: SessionDep,
+    request: Request,
+    file: UploadFile = File(...),
+    title: str | None = Form(default=None),
+    due_at: str | None = Form(default=None),
+    status: str = Form(default="published"),
+) -> dict:
+    _require_teacher_request(request)
+    filename = (file.filename or "").lower()
+    if not filename.endswith((".md", ".txt")):
+        raise _fail(400, "UNSUPPORTED_FILE", "只支持 .md 或 .txt")
+    raw = await file.read()
+    if len(raw) > 2 * 1024 * 1024:
+        raise _fail(413, "FILE_TOO_LARGE", "作业文件不能超过 2 MB")
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise _fail(400, "INVALID_ENCODING", "文件需要 UTF-8 编码") from exc
+
+    try:
+        parsed = parse_assignment_text(text)
+    except AssignmentImportError as exc:
+        raise _fail(400, "IMPORT_PARSE_FAILED", f"第 {exc.line} 行：{exc.message}") from exc
+
+    validated = _validate_items([AssignmentItemIn(**item) for item in parsed["items"]])
+    account = current_account(request)
+    assignment = await _create_assignment(
+        session,
+        title=(title or parsed["title"]),
+        description="",
+        chapter_id=None,
+        due_at=_parse_due(due_at),
+        status=status,
+        items=validated,
+        created_by=account.user_key if account else "teacher",
+        source_filename=file.filename or "",
+    )
+    await session.commit()
+    return {
+        "id": assignment.id,
+        "title": assignment.title,
+        "item_count": len(validated),
+        "total_score": assignment.total_score,
+        "warnings": parsed["warnings"],
+    }
+
+
+@router.get("/assignments/{assignment_id}")
+async def get_assignment(
+    assignment_id: str,
+    session: SessionDep,
+    request: Request,
+    user_key: str = Depends(scoped_user_key),
+) -> dict:
+    teacher = _is_teacher(request)
+    assignment, items = await _load_assignment(session, assignment_id)
+    payload = {
+        "id": assignment.id,
+        "title": assignment.title,
+        "description": assignment.description,
+        "chapter_id": assignment.chapter_id,
+        "due_at": iso(assignment.due_at),
+        "status": assignment.status,
+        "total_score": assignment.total_score,
+        "item_count": len(items),
+        "items": [_item_payload(item, teacher) for item in items],
+    }
+    if teacher:
+        subs = (
+            await session.execute(select(Submission).where(Submission.assignment_id == assignment.id))
+        ).scalars().all()
+        graded = [sub for sub in subs if sub.status == "graded"]
+        payload["stats"] = {
+            "submitted": len(subs),
+            "graded": len(graded),
+            "ungraded": len(subs) - len(graded),
+            "avg_score": round(sum(sub.score for sub in graded) / len(graded)) if graded else None,
+        }
+    else:
+        mine = (
+            await session.execute(
+                select(Submission).where(
+                    Submission.assignment_id == assignment.id, Submission.user_key == user_key
+                )
+            )
+        ).scalars().first()
+        payload["my_submission"] = (await _submission_payload(session, mine)) if mine else None
+    return payload
+
+
+@router.post("/assignments/{assignment_id}/submissions", status_code=201)
+async def submit_assignment(
+    assignment_id: str,
+    payload: SubmissionCreate,
+    session: SessionDep,
+    request: Request,
+    user_key: str = Depends(scoped_user_key),
+) -> dict:
+    assignment, items = await _load_assignment(session, assignment_id)
+    if assignment.status == "closed":
+        raise _fail(400, "ASSIGNMENT_CLOSED", "作业已关闭，不能再提交")
+
+    answers = {
+        str(entry.get("item_id")): str(entry.get("answer") or "")[:4000]
+        for entry in payload.items
+        if isinstance(entry, dict) and entry.get("item_id")
+    }
+
+    existing = (
+        await session.execute(
+            select(Submission).where(
+                Submission.assignment_id == assignment.id, Submission.user_key == user_key
+            )
+        )
+    ).scalars().first()
+    submission = existing or Submission(
+        id=new_id(),
+        assignment_id=assignment.id,
+        course_id=assignment.course_id,
+        user_key=user_key,
+    )
+    submission.status = "grading"
+    submission.submitted_at = utcnow()
+    submission.error_code = None
+    session.add(submission)
+    await session.flush()
+
+    try:
+        results = await asyncio.wait_for(_grade_all(items, answers), timeout=55)
+    except asyncio.TimeoutError:
+        results = [
+            rule_grade(
+                {"type": item.type, "stem": item.stem, "reference": item.reference, "rubric": item.rubric or [], "score": item.score},
+                answers.get(item.id, ""),
+            )
+            for item in items
+        ]
+        for result in results:
+            result["fallback"] = True
+
+    await _persist_grade(session, submission, items, answers, results)
+    await session.commit()
+    return await _submission_payload(session, submission)
+
+
+@router.get("/assignments/{assignment_id}/submissions")
+async def list_submissions(
+    assignment_id: str,
+    session: SessionDep,
+    request: Request,
+) -> dict:
+    _require_teacher_request(request)
+    assignment, items = await _load_assignment(session, assignment_id)
+    subs = (
+        await session.execute(
+            select(Submission)
+            .where(Submission.assignment_id == assignment.id)
+            .order_by(Submission.submitted_at.desc())
+        )
+    ).scalars().all()
+    review_counts: dict[str, int] = {}
+    for submission_id, count in (
+        await session.execute(
+            select(SubmissionItem.submission_id, func.count(SubmissionItem.id))
+            .where(
+                SubmissionItem.submission_id.in_([sub.id for sub in subs]),
+                SubmissionItem.needs_review.is_(True),
+            )
+            .group_by(SubmissionItem.submission_id)
+        )
+    ).all():
+        review_counts[submission_id] = int(count)
+    return {
+        "assignment": {
+            "id": assignment.id,
+            "title": assignment.title,
+            "total_score": assignment.total_score,
+            "item_count": len(items),
+        },
+        "items": [
+            {
+                "submission_id": sub.id,
+                "user_key": sub.user_key,
+                "status": sub.status,
+                "score": sub.score,
+                "max_score": sub.max_score,
+                "source": sub.source,
+                "needs_review_count": review_counts.get(sub.id, 0),
+                "submitted_at": iso(sub.submitted_at),
+                "graded_at": iso(sub.graded_at),
+            }
+            for sub in subs
+        ],
+    }
+
+
+@router.get("/submissions/{submission_id}")
+async def get_submission(
+    submission_id: str,
+    session: SessionDep,
+    request: Request,
+    user_key: str = Depends(scoped_user_key),
+) -> dict:
+    submission = await session.get(Submission, submission_id)
+    if submission is None:
+        raise _fail(404, "SUBMISSION_NOT_FOUND", "提交不存在")
+    if not _is_teacher(request) and submission.user_key != user_key:
+        raise _fail(403, "FORBIDDEN", "只能查看自己的提交")
+    return await _submission_payload(session, submission)
+
+
+@router.patch("/submissions/{submission_id}/items/{item_id}")
+async def patch_submission_item(
+    submission_id: str,
+    item_id: str,
+    payload: SubmissionItemPatch,
+    session: SessionDep,
+    request: Request,
+) -> dict:
+    _require_teacher_request(request)
+    submission = await session.get(Submission, submission_id)
+    if submission is None:
+        raise _fail(404, "SUBMISSION_NOT_FOUND", "提交不存在")
+    item = await session.get(AssignmentItem, item_id)
+    if item is None or item.assignment_id != submission.assignment_id:
+        raise _fail(404, "ITEM_NOT_FOUND", "题目不属于该作业")
+    row = (
+        await session.execute(
+            select(SubmissionItem).where(
+                SubmissionItem.submission_id == submission.id, SubmissionItem.item_id == item_id
+            )
+        )
+    ).scalars().first()
+    if row is None:
+        raise _fail(404, "NOT_SUBMITTED", "该题没有作答记录")
+
+    if payload.score is not None:
+        if payload.score > item.score:
+            raise _fail(400, "SCORE_OUT_OF_RANGE", f"该题满分 {item.score} 分")
+        row.score = payload.score
+        row.needs_review = False
+    if payload.feedback is not None:
+        row.feedback = payload.feedback.strip()[:200]
+    row.source = "teacher"
+    row.verdict = "correct" if row.score >= item.score else ("wrong" if row.score <= 0 else "partial")
+
+    rows = (
+        await session.execute(select(SubmissionItem).where(SubmissionItem.submission_id == submission.id))
+    ).scalars().all()
+    submission.score = sum(entry.score for entry in rows)
+    submission.max_score = sum(entry.max_score for entry in rows)
+    submission.source = _summarize_source([entry.source for entry in rows])
+    submission.overall_comment = _overall_comment(
+        submission.score,
+        submission.max_score,
+        sum(1 for entry in rows if entry.needs_review),
+        len(rows),
+    )
+    submission.graded_at = utcnow()
+    await session.commit()
+    return await _submission_payload(session, submission)
+
+
+@router.post("/submissions/{submission_id}/regrade")
+async def regrade_submission(
+    submission_id: str,
+    session: SessionDep,
+    request: Request,
+) -> dict:
+    _require_teacher_request(request)
+    submission = await session.get(Submission, submission_id)
+    if submission is None:
+        raise _fail(404, "SUBMISSION_NOT_FOUND", "提交不存在")
+    _, items = await _load_assignment(session, submission.assignment_id)
+    rows = (
+        await session.execute(select(SubmissionItem).where(SubmissionItem.submission_id == submission.id))
+    ).scalars().all()
+    answers = {row.item_id: row.answer_text for row in rows}
+
+    try:
+        results = await asyncio.wait_for(_grade_all(items, answers), timeout=55)
+    except asyncio.TimeoutError:
+        results = [
+            rule_grade(
+                {"type": item.type, "stem": item.stem, "reference": item.reference, "rubric": item.rubric or [], "score": item.score},
+                answers.get(item.id, ""),
+            )
+            for item in items
+        ]
+    await _persist_grade(session, submission, items, answers, results)
+    await session.commit()
+    return await _submission_payload(session, submission)
 
 
 from app.db import SessionFactory as AsyncSessionLocal  # noqa: E402

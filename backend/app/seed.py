@@ -5,11 +5,23 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 from sqlalchemy import select, update
 
 from app.db import SessionFactory
-from app.models import Chapter, Chunk, Concept, ConceptEdge, Course, Document, Question
-from app.util import new_id
+from app.models import (
+    Assignment,
+    AssignmentItem,
+    Chapter,
+    Chunk,
+    Concept,
+    ConceptEdge,
+    Course,
+    Document,
+    Question,
+)
+from app.util import new_id, utcnow
 
 COURSE_ID = "course_cn"
 COURSE_TITLE = "计算机网络"
@@ -974,6 +986,78 @@ QUESTIONS = [
 ]
 
 
+ASSIGNMENTS = [
+    {
+        "id": "asg_w3",
+        "title": "第 3 周作业：TCP 与子网",
+        "chapter_id": "ch_04",
+        "due_in_days": 1,
+        "items": [
+            {
+                "type": "short",
+                "stem": "TCP 三次握手中，第三次 ACK 的作用是什么？",
+                "reference": "客户端确认收到了服务端的 SYN+ACK，证明客户端接收与服务端发送通道可用；同时同步并确认序号，避免历史重复连接被误接受。",
+                "rubric": [
+                    {"text": "确认客户端接收能力与服务端发送通道", "score": 4},
+                    {"text": "同步并确认序号", "score": 3},
+                    {"text": "避免历史重复连接被误接受", "score": 3},
+                ],
+                "score": 10,
+                "concept_id": "handshake",
+            },
+            {
+                "type": "short",
+                "stem": "TCP 已经有流量控制，为什么还需要拥塞控制？",
+                "reference": "流量控制只保护接收端缓冲区，避免发送方压垮接收方；拥塞控制面向整个网络，通过 cwnd 感知链路与路由器负载，避免大量主机同时重传把网络推入拥塞崩溃。",
+                "rubric": [
+                    {"text": "流量控制保护接收端缓冲区", "score": 4},
+                    {"text": "拥塞控制面向网络整体负载", "score": 3},
+                    {"text": "避免拥塞崩溃与全局重传放大", "score": 3},
+                ],
+                "score": 10,
+                "concept_id": "congestion",
+            },
+            {
+                "type": "short",
+                "stem": "ARP 在同一网段内和跨网段访问时，解析目标有什么不同？",
+                "reference": "同网段解析目的主机的 MAC，直接封装帧发送；跨网段解析默认网关的 MAC，由网关转发，目的 IP 仍在 IP 头里保持不变。",
+                "rubric": [
+                    {"text": "同网段解析目的主机 MAC", "score": 4},
+                    {"text": "跨网段解析默认网关 MAC", "score": 4},
+                    {"text": "目的 IP 保持不变", "score": 2},
+                ],
+                "score": 10,
+                "concept_id": "arp",
+            },
+            {
+                "type": "calc",
+                "stem": "192.168.10.0/27 的网络地址和可用主机数分别是多少？写出计算依据。",
+                "reference": "块大小 32，网络地址 192.168.10.0，广播地址 192.168.10.31，可用主机 30 个。",
+                "rubric": [
+                    {"text": "网络地址 192.168.10.0", "score": 4},
+                    {"text": "可用主机 30 个", "score": 4},
+                    {"text": "块大小 32，去掉网络与广播地址", "score": 2},
+                ],
+                "score": 10,
+                "concept_id": "cidr",
+            },
+            {
+                "type": "calc",
+                "stem": "把 10.0.0.0/8 划分为 /12 子网，可以划分出多少个子网？说明依据。",
+                "reference": "前缀从 8 位增加到 12 位，借 4 位主机位做子网号，2^4 = 16 个子网。",
+                "rubric": [
+                    {"text": "借 4 位作为子网号", "score": 4},
+                    {"text": "子网数 16 个", "score": 4},
+                    {"text": "2^4 的计算依据", "score": 2},
+                ],
+                "score": 10,
+                "concept_id": "mask",
+            },
+        ],
+    }
+]
+
+
 async def _seed_concepts(session) -> None:
     """概念与关系幂等补种：老演示库缺哪个补哪个，并把未挂知识点的题回填归属。"""
     existing = set((await session.execute(select(Concept.id))).scalars().all())
@@ -1038,12 +1122,53 @@ async def _seed_questions(session) -> None:
     await session.commit()
 
 
+async def _seed_assignments(session) -> None:
+    """作业幂等补种：只补题目，不造学生提交，避免演示数据看起来像刷出来的。"""
+    existing = set((await session.execute(select(Assignment.id))).scalars().all())
+    for row in ASSIGNMENTS:
+        if row["id"] in existing:
+            continue
+        due_at = utcnow() + timedelta(days=row["due_in_days"]) if row.get("due_in_days") else None
+        items = row["items"]
+        session.add(
+            Assignment(
+                id=row["id"],
+                course_id=COURSE_ID,
+                chapter_id=row.get("chapter_id"),
+                title=row["title"],
+                description=row.get("description", ""),
+                due_at=due_at,
+                total_score=sum(item["score"] for item in items),
+                status=row.get("status", "published"),
+                created_by="teacher",
+            )
+        )
+        await session.flush()
+        for ordinal, item in enumerate(items, start=1):
+            session.add(
+                AssignmentItem(
+                    id=f"{row['id']}_i{ordinal}",
+                    assignment_id=row["id"],
+                    ordinal=ordinal,
+                    type=item["type"],
+                    stem=item["stem"],
+                    reference=item["reference"],
+                    rubric=item["rubric"],
+                    score=item["score"],
+                    concept_id=item.get("concept_id"),
+                    difficulty=item.get("difficulty", "medium"),
+                )
+            )
+    await session.commit()
+
+
 async def seed_if_empty() -> None:
     async with SessionFactory() as session:
         existing = await session.scalar(select(Course).where(Course.id == COURSE_ID))
         if existing:
             await _seed_concepts(session)
             await _seed_questions(session)
+            await _seed_assignments(session)
             return
 
         session.add(
@@ -1116,3 +1241,4 @@ async def seed_if_empty() -> None:
 
         await session.commit()
         await _seed_questions(session)
+        await _seed_assignments(session)
