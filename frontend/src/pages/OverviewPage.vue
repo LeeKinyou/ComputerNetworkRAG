@@ -5,6 +5,7 @@ import {
   BookMarked,
   BookOpen,
   CheckCircle2,
+  ClipboardList,
   Clock3,
   Flame,
   PenLine,
@@ -20,6 +21,7 @@ import type {
   AnalyticsConcept,
   AnalyticsOverview,
   LearningPlan,
+  LearningTask,
   PendingRun,
   PracticeAttemptRow,
   WrongBook,
@@ -92,13 +94,17 @@ const subline = computed(() => {
   return `${tasks.value.length} 项任务，约 ${totalMinutes.value} 分钟`
 })
 
-const taskIcon = { learn: BookOpen, review: RefreshCw, practice: PenLine }
+const taskIcon = { learn: BookOpen, review: RefreshCw, practice: PenLine, submit: ClipboardList }
 const taskTone: Record<string, string> = {
   learn: 'bg-brand-soft text-brand',
   review: 'bg-warn/12 text-warn',
   practice: 'bg-success/12 text-success',
+  submit: 'bg-brand-soft text-brand',
 }
-const taskPath = (conceptId: string) => ({ path: '/practice', query: { concept: conceptId } })
+const taskPath = (task: LearningTask) =>
+  task.kind === 'assignment'
+    ? { path: '/assignments', query: task.assignment_id ? { focus: task.assignment_id } : {} }
+    : { path: '/practice', query: task.concept_id ? { concept: task.concept_id } : {} }
 
 /** 当前最需要收尾的一章：有知识点且正确率最低 */
 const focusChapter = computed(() => {
@@ -205,7 +211,7 @@ function timeLabel(value: string) {
           调整计划
         </RouterLink>
         <RouterLink
-          :to="mainTask ? taskPath(mainTask.concept_id) : '/practice'"
+          :to="mainTask ? taskPath(mainTask) : '/assignments'"
           class="pill-btn h-9 bg-ink pl-3.5 text-canvas shadow-[0_6px_16px_-8px_rgba(17,19,24,0.55)] hover:opacity-90"
         >
           <PlayCircle :size="15" />
@@ -222,9 +228,9 @@ function timeLabel(value: string) {
             <span class="text-[10.5px] text-muted">{{ tasks.length }} 项 · {{ totalMinutes }} 分钟</span>
           </header>
           <ul v-if="tasks.length" class="p-2">
-            <li v-for="(t, i) in tasks" :key="t.concept_id + i">
+            <li v-for="(t, i) in tasks" :key="`${t.concept_id ?? t.assignment_id ?? 'task'}-${i}`">
               <RouterLink
-                :to="taskPath(t.concept_id)"
+                :to="taskPath(t)"
                 class="group flex items-center gap-3.5 rounded-xl px-3 py-3 transition-colors"
                 :class="i === 0 ? 'bg-brand-soft/60' : 'hover:bg-tint-soft'"
               >

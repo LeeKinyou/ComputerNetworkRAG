@@ -11,6 +11,7 @@ const router = createRouter({
       meta: { public: true, bare: true },
     },
     { path: '/', name: 'overview', component: () => import('@/pages/OverviewPage.vue') },
+    { path: '/assignments', name: 'assignments', component: () => import('@/pages/AssignmentsPage.vue') },
     { path: '/graph', name: 'graph', component: () => import('@/pages/GraphPage.vue') },
     { path: '/path', name: 'path', component: () => import('@/pages/PathPage.vue') },
     { path: '/rag', redirect: { path: '/chat', query: { mode: 'rag' } } },

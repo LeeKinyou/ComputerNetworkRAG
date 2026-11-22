@@ -166,16 +166,30 @@ export interface WrongBook {
 }
 
 export interface LearningTask {
-  concept_id: string
+  concept_id: string | null
   title: string
   chapter_id: string | null
   chapter_title: string
   state: string
   rate: number
   attempts: number
-  action: 'review' | 'learn' | 'practice'
+  action: 'review' | 'learn' | 'practice' | 'submit'
   reason: string
   minutes: number
+  /** 作业节点：kind=assignment 时带 assignment_id 与截止时间 */
+  kind?: 'concept' | 'assignment'
+  assignment_id?: string | null
+  due_at?: string | null
+  overdue?: boolean
+  priority?: number
+}
+
+export interface LearningStage {
+  key: string
+  title: string
+  goal: string
+  minutes: number
+  tasks: LearningTask[]
 }
 
 export interface LearningChapter {
@@ -200,6 +214,8 @@ export interface LearningPlan {
   recent_attempts: number
   tasks: LearningTask[]
   chapters: LearningChapter[]
+  /** 阶段化路径：本周 / 接下来；旧页面可继续只读 tasks */
+  stages?: LearningStage[]
 }
 
 const BASE = '/api/v2'
@@ -238,6 +254,8 @@ export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) }),
+  patch: <T>(path: string, body?: unknown) =>
+    request<T>(path, { method: 'PATCH', body: body === undefined ? undefined : JSON.stringify(body) }),
   upload: <T>(path: string, form: FormData) => request<T>(path, { method: 'POST', body: form }),
   del: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 }
@@ -396,4 +414,120 @@ export interface GraphDto {
   nodes: GraphNodeDto[]
   links: GraphLinkDto[]
   chapters: { id: string; title: string }[]
+}
+
+/* ---------- 作业与批改 ---------- */
+
+export interface RubricPoint {
+  text: string
+  score: number
+}
+
+export interface AssignmentItemDto {
+  id: string
+  ordinal: number
+  type: 'short' | 'calc'
+  stem: string
+  score: number
+  concept_id: string | null
+  difficulty: string
+  /** 学生视角不下发 */
+  reference?: string
+  rubric?: RubricPoint[]
+}
+
+export interface AssignmentRow {
+  id: string
+  title: string
+  description: string
+  chapter_id: string | null
+  chapter_title: string
+  due_at: string | null
+  status: string
+  item_count: number
+  total_score: number
+  source_filename: string
+  /* 学生视角 */
+  my_status?: 'todo' | 'submitted' | 'grading' | 'graded' | 'failed'
+  my_score?: number | null
+  submission_id?: string | null
+  /* 教师视角 */
+  submitted_count?: number
+  graded_count?: number
+  ungraded_count?: number
+  avg_score?: number | null
+}
+
+export interface AssignmentList {
+  items: AssignmentRow[]
+  pending: number
+}
+
+export interface AssignmentDetail {
+  id: string
+  title: string
+  description: string
+  chapter_id: string | null
+  due_at: string | null
+  status: string
+  total_score: number
+  item_count: number
+  items: AssignmentItemDto[]
+  my_submission?: SubmissionDto | null
+  stats?: { submitted: number; graded: number; ungraded: number; avg_score: number | null }
+}
+
+export interface GradedPoint {
+  point: string
+  hit: boolean
+  score: number
+  partial?: boolean
+  reason?: string
+}
+
+export interface SubmissionItemDto {
+  item_id: string
+  ordinal: number
+  type: string
+  stem: string
+  answer: string
+  score: number
+  max_score: number
+  verdict: 'correct' | 'partial' | 'wrong' | string
+  feedback: string
+  points: GradedPoint[]
+  source: string
+  needs_review: boolean
+}
+
+export interface SubmissionDto {
+  submission_id: string
+  assignment_id: string
+  user_key: string
+  status: string
+  score: number
+  max_score: number
+  source: string
+  overall_comment: string
+  error_code: string | null
+  submitted_at: string | null
+  graded_at: string | null
+  items: SubmissionItemDto[]
+}
+
+export interface SubmissionRow {
+  submission_id: string
+  user_key: string
+  status: string
+  score: number
+  max_score: number
+  source: string
+  needs_review_count: number
+  submitted_at: string | null
+  graded_at: string | null
+}
+
+export interface SubmissionRoster {
+  assignment: { id: string; title: string; total_score: number; item_count: number }
+  items: SubmissionRow[]
 }

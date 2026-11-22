@@ -7,6 +7,7 @@ import {
   BookOpen,
   Bot,
   ChevronDown,
+  ClipboardList,
   HelpCircle,
   LayoutDashboard,
   LogOut,
@@ -51,6 +52,7 @@ const navGroups = computed(() => {
       items: [
         { to: '/', label: '工作台', icon: LayoutDashboard },
         { to: '/chat', label: '智能问答', icon: Bot },
+        { to: '/assignments', label: '作业', icon: ClipboardList },
         { to: '/practice', label: '练习中心', icon: PenLine },
         { to: '/wrongbook', label: '错题本', icon: BookMarked },
         { to: '/graph', label: '知识图谱', icon: Waypoints },
@@ -73,6 +75,7 @@ const navGroups = computed(() => {
 const labels: Record<string, string> = {
   overview: '工作台',
   chat: '智能问答',
+  assignments: '作业',
   practice: '练习中心',
   graph: '知识图谱',
   path: '学习计划',
@@ -206,7 +209,7 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
           <Sparkles :size="16" />
         </div>
         <div class="leading-tight">
-          <div class="text-[12.5px] font-semibold tracking-tight">重邮计网教学系统</div>
+          <div class="text-[12.5px] font-semibold tracking-tight">智网系统</div>
           <div class="text-[11px] text-muted">智能助教工作台</div>
         </div>
       </div>

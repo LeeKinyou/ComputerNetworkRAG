@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   BookOpen,
+  ClipboardList,
   Clock,
   CircleHelp,
   ListChecks,
@@ -35,6 +36,7 @@ const actionMeta: Record<string, { label: string; cls: string }> = {
   review: { label: '复习', cls: 'bg-warn/10 text-warn' },
   learn: { label: '入门', cls: 'bg-brand-soft text-brand' },
   practice: { label: '巩固', cls: 'bg-success/10 text-success' },
+  submit: { label: '作业', cls: 'bg-brand-soft text-brand' },
 }
 
 const summary = computed(() => [
@@ -67,6 +69,10 @@ function goPractice(conceptId: string) {
 
 function goAsk(title: string) {
   router.push({ path: '/chat', query: { q: `帮我讲清楚「${title}」这个知识点` } })
+}
+
+function goAssignment(id?: string | null) {
+  router.push(id ? { path: '/assignments', query: { focus: id } } : { path: '/assignments' })
 }
 
 function chapterPct(covered: number, total: number) {
@@ -118,6 +124,7 @@ watch(currentKey, load)
         </h2>
         <span class="text-[10px] text-muted">按优先级排序 · 预计 {{ plan?.tasks.reduce((s, t) => s + t.minutes, 0) ?? 0 }} 分钟</span>
       </div>
+      <p v-if="plan?.stages?.[0]?.goal" class="mt-1 text-[11px] text-muted">{{ plan.stages[0].goal }}</p>
 
       <div v-if="loading && !plan" class="py-10 text-center text-[12px] text-muted">正在按你的记录排计划…</div>
       <div v-else-if="!plan?.tasks.length" class="py-10 text-center">
@@ -128,7 +135,7 @@ watch(currentKey, load)
       <ol v-else class="mt-3 space-y-2">
         <li
           v-for="(task, index) in plan.tasks"
-          :key="task.concept_id"
+          :key="task.concept_id ?? task.assignment_id ?? index"
           class="flex items-start gap-3 rounded-xl border border-line bg-tint-soft px-4 py-3"
         >
           <span class="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-surface text-[11px] font-semibold text-muted">
@@ -150,19 +157,29 @@ watch(currentKey, load)
           </span>
           <div class="mt-0.5 flex shrink-0 items-center gap-1.5">
             <button
+              v-if="task.kind === 'assignment'"
               class="pill-btn h-7 border border-line bg-surface px-2.5 text-[10.5px] text-subink hover:border-brand/40 hover:text-brand"
-              @click="goPractice(task.concept_id)"
+              @click="goAssignment(task.assignment_id)"
             >
-              <BookOpen :size="11" />
-              去练习
+              <ClipboardList :size="11" />
+              去作业
             </button>
-            <button
-              class="pill-btn h-7 border border-line bg-surface px-2.5 text-[10.5px] text-subink hover:border-line-strong hover:text-ink"
-              @click="goAsk(task.title)"
-            >
-              <CircleHelp :size="11" />
-              去问
-            </button>
+            <template v-else>
+              <button
+                class="pill-btn h-7 border border-line bg-surface px-2.5 text-[10.5px] text-subink hover:border-brand/40 hover:text-brand"
+                @click="goPractice(task.concept_id ?? '')"
+              >
+                <BookOpen :size="11" />
+                去练习
+              </button>
+              <button
+                class="pill-btn h-7 border border-line bg-surface px-2.5 text-[10.5px] text-subink hover:border-line-strong hover:text-ink"
+                @click="goAsk(task.title)"
+              >
+                <CircleHelp :size="11" />
+                去问
+              </button>
+            </template>
           </div>
         </li>
       </ol>
