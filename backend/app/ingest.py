@@ -229,6 +229,7 @@ async def ingest_document(
         chunk_count=len(chunks),
     )
     session.add(document)
+    await session.flush()  # 外键开启时，先落文档行再插分块
     for ordinal, (section_path, page, text) in enumerate(chunks):
         session.add(
             Chunk(

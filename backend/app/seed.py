@@ -992,6 +992,8 @@ async def _seed_concepts(session) -> None:
             )
         )
 
+    # 外键开启后必须先落概念，再写引用概念的边
+    await session.flush()
     edge_rows = (await session.execute(select(ConceptEdge.source_id, ConceptEdge.target_id, ConceptEdge.kind))).all()
     known_edges = {(row[0], row[1], row[2]) for row in edge_rows}
     for source, target, kind in EDGES:
@@ -1051,6 +1053,7 @@ async def seed_if_empty() -> None:
                 description="从分层模型到应用层，围绕协议、地址与转发组织的一门课程。",
             )
         )
+        await session.flush()  # 课程先落库，章节与概念才能引用
         for chapter_id, title, order in CHAPTERS:
             session.add(
                 Chapter(
@@ -1073,6 +1076,7 @@ async def seed_if_empty() -> None:
                     sort_order=index,
                 )
             )
+        await session.flush()  # 课程、章节、概念先落库，后面的边与文档才能引用
         for source, target, kind in EDGES:
             session.add(
                 ConceptEdge(
@@ -1097,6 +1101,7 @@ async def seed_if_empty() -> None:
                 chunk_count=len(doc["chunks"]),
             )
             session.add(document)
+            await session.flush()  # 先落文档行，再插引用它的分块
             for ordinal, (section_path, page, text) in enumerate(doc["chunks"]):
                 session.add(
                     Chunk(

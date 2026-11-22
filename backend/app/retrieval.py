@@ -30,6 +30,8 @@ logger = logging.getLogger("cnrag.retrieval")
 
 VECTOR_DIM = 256
 TERM_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9./:_-]*")
+# 带分隔符的编号/地址（IP、CIDR、CSMA/CD、HTTP/2）：先整串保留，避免被 jieba 拆碎
+STRUCTURED_TERM_RE = re.compile(r"[A-Za-z0-9]+(?:[./:_-][A-Za-z0-9]+)+")
 
 # 课程术语，避免被 jieba 切碎
 _COURSE_TERMS = (
@@ -42,8 +44,10 @@ for _term in _COURSE_TERMS.split():
 
 def tokenize(text: str) -> list[str]:
     """中文用 jieba，英文/编号保持整体（如 192.168.10.137/27、TCP）。"""
-    tokens: list[str] = []
-    for raw in jieba.lcut(text.lower()):
+    lowered = text.lower()
+    # 先把地址与带分隔符的编号整体收进来，再做中文分词
+    tokens: list[str] = STRUCTURED_TERM_RE.findall(lowered)
+    for raw in jieba.lcut(lowered):
         term = raw.strip()
         if not term:
             continue

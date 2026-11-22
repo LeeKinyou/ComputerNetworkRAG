@@ -7,25 +7,30 @@
 ```powershell
 # 首次
 cd backend
-uv sync
+uv sync                 # 若本机已有 backend\.venv，可跳过本步
 
 # 前端产物（若尚未构建）
 cd ..\frontend; npm ci; npm run build
 
 # 启动（在 backend 目录）
-uv run python -m app.main
+.\.venv\Scripts\python.exe -m app.main
+# 或者用 uv：uv run python -m app.main
 ```
 
 打开 `http://127.0.0.1:8000`，接口文档在 `http://127.0.0.1:8000/api/docs`。
 
 ## 数据库
 
-`.env` 中 `DB_BACKEND` 决定存储：
+`.env` 中 `DB_BACKEND` 决定存储，两种模式共用同一套模型与接口：
 
-- `sqlite`（默认，演示推荐）：`DB_SQLITE_PATH=./runtime/app.db`，首次启动自动建表并写入种子课程，零外部依赖；
-- `postgresql`：`DB_POSTGRES_DSN` 指向 PostgreSQL，适合联调真实链路。
+- `postgresql`（当前默认）：`DB_POSTGRES_DSN` 指向 PostgreSQL（`postgresql+asyncpg://...`），首次启动自动建表并写入种子课程；
+- `sqlite`：`DB_SQLITE_PATH=./runtime/app.db`，单文件、零外部依赖，适合断网或临时演示。
 
-演示场景建议保持 SQLite：单文件、可随仓库目录一起拷贝、断网也能跑。
+检查点单独由 `CHECKPOINT_BACKEND` 决定（`postgres` 用 `AsyncPostgresSaver`，`sqlite` 用 `AsyncSqliteSaver` + `CHECKPOINT_SQLITE_PATH`）。两者可组合，但一般与业务库保持一致。
+
+从 SQLite 切到 PostgreSQL 时，用 `python scripts/migrate_sqlite_to_pg.py` 迁业务数据；检查点表结构不兼容（SQLite 为 BLOB、PostgreSQL 为 jsonb），历史会话状态不迁移。
+
+Windows 上 `psycopg` 异步只用 SelectorEventLoop，`app.main` 已在入口固定策略；因此不要用 `uvicorn app.main:app --reload` 启动，直接 `python -m app.main`。
 
 ## 模型
 

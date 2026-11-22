@@ -35,7 +35,9 @@ class Settings(BaseSettings):
     retrieval_max_index_bytes: int = 8_000_000
 
     worker_concurrency: int = 1
+    checkpoint_backend: str = "sqlite"  # sqlite | postgres
     checkpoint_sqlite_path: str = "./runtime/checkpoints.db"
+    checkpoint_postgres_dsn: str = ""  # 留空则复用 DB_POSTGRES_DSN
 
     llm_base_url: str = "https://api.deepseek.com"
     llm_api_key: str = ""
@@ -62,6 +64,12 @@ class Settings(BaseSettings):
     @property
     def sqlite_path(self) -> Path:
         return self.resolve_path(self.db_sqlite_path)
+
+    @property
+    def checkpoint_dsn(self) -> str:
+        """PostgreSQL 检查点使用的 libpq DSN（去掉 SQLAlchemy 的 +asyncpg 后缀）。"""
+        dsn = (self.checkpoint_postgres_dsn or self.db_postgres_dsn).strip()
+        return dsn.replace("postgresql+asyncpg://", "postgresql://")
 
     def ensure_runtime(self) -> None:
         self.runtime_dir.mkdir(parents=True, exist_ok=True)

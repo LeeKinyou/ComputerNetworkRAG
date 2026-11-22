@@ -3,7 +3,15 @@
 from __future__ import annotations
 
 import logging
+import sys
 from contextlib import asynccontextmanager
+
+import asyncio
+
+# psycopg 的异步连接不支持 Windows 默认的 ProactorEventLoop；
+# 用 PostgreSQL 检查点时必须切到 Selector 事件循环（Linux 上无影响）。
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import HTTPException as FastAPIHTTPException
@@ -37,13 +45,23 @@ async def lifespan(_: FastAPI):
         retriever.embedder_label,
     )
 
-    checkpoint_path = settings.resolve_path(settings.checkpoint_sqlite_path)
-    checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-    checkpoint_cm = AsyncSqliteSaver.from_conn_string(str(checkpoint_path))
-    checkpointer = await checkpoint_cm.__aenter__()
-    await checkpointer.setup()
-    agent.bind_checkpointer(checkpointer)
-    logger.info("checkpoint ready: %s", checkpoint_path)
+    if settings.checkpoint_backend.lower() == "postgres":
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+
+        checkpoint_cm = AsyncPostgresSaver.from_conn_string(settings.checkpoint_dsn)
+        checkpointer = await checkpoint_cm.__aenter__()
+        await checkpointer.setup()
+        agent.bind_checkpointer(checkpointer)
+        # 只打印 host/db，避免把凭据写进日志
+        logger.info("checkpoint ready: postgres @%s", settings.checkpoint_dsn.split("@")[-1])
+    else:
+        checkpoint_path = settings.resolve_path(settings.checkpoint_sqlite_path)
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        checkpoint_cm = AsyncSqliteSaver.from_conn_string(str(checkpoint_path))
+        checkpointer = await checkpoint_cm.__aenter__()
+        await checkpointer.setup()
+        agent.bind_checkpointer(checkpointer)
+        logger.info("checkpoint ready: %s", checkpoint_path)
     try:
         yield
     finally:
@@ -102,11 +120,20 @@ async def spa_fallback(path: str):
             status_code=404,
             content={"error": {"code": "NOT_FOUND", "message": "接口不存在"}},
         )
-    candidate = STATIC_DIR / path
+    static_root = STATIC_DIR.resolve()
+    candidate = (STATIC_DIR / path).resolve()
+    try:
+        candidate.relative_to(static_root)
+    except ValueError:
+        # 编码后的点段可能绕过客户端归一化，这里按解析后的真实路径收口
+        return JSONResponse(
+            status_code=404,
+            content={"error": {"code": "NOT_FOUND", "message": "资源不存在"}},
+        )
     if candidate.is_file():
         return FileResponse(candidate)
-    if (STATIC_DIR / "index.html").exists():
-        return FileResponse(STATIC_DIR / "index.html")
+    if (static_root / "index.html").exists():
+        return FileResponse(static_root / "index.html")
     return JSONResponse(
         status_code=503,
         content={"error": {"code": "STATIC_NOT_BUILT", "message": "前端尚未构建，请先运行 npm run build"}},
@@ -116,4 +143,9 @@ async def spa_fallback(path: str):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=False)
+    # 不用 uvicorn.run()：它在 Windows 上会在内部重建 ProactorEventLoop，
+    # 导致 psycopg 的异步检查点连接失败。这里自己建 loop 再交给 Server。
+    config = uvicorn.Config("app.main:app", host="127.0.0.1", port=8000, reload=False)
+    config.load()
+    server = uvicorn.Server(config)
+    asyncio.run(server.serve())

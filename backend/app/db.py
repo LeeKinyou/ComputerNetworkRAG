@@ -5,11 +5,23 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from sqlalchemy import inspect, text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy import event, inspect, text
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import settings
 from app.models import Base
+
+
+def enable_sqlite_foreign_keys(engine: AsyncEngine) -> None:
+    """SQLite 默认关闭外键约束，开启后 `ondelete="CASCADE"` 才会真正生效。"""
+    if engine.dialect.name != "sqlite":
+        return
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _set_sqlite_pragma(dbapi_connection, _connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
 
 
 def _database_url() -> str:
@@ -37,6 +49,7 @@ engine = create_async_engine(
         else {}
     ),
 )
+enable_sqlite_foreign_keys(engine)
 
 SessionFactory = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
