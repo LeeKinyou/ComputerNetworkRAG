@@ -1,4 +1,4 @@
-# CNRAG 前端
+# 重邮计网教学系统 前端
 
 计算机网络智能助教的展示层。Vue 3 + TypeScript + Vite + Tailwind CSS 4 + ECharts 6。
 

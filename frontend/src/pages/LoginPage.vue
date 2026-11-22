@@ -66,7 +66,7 @@ async function submit() {
                 <Sparkles :size="16" />
               </div>
               <div class="leading-tight">
-                <div class="text-[13px] font-semibold tracking-tight">CNRAG</div>
+                <div class="text-[13px] font-semibold tracking-tight">重邮计网教学系统</div>
                 <div class="text-[11px] text-muted">智能助教工作台</div>
               </div>
             </div>

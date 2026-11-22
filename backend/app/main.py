@@ -71,7 +71,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(
-    title="CNRAG 计算机网络智能助教",
+    title="重邮计网教学系统",
     version="0.1.0",
     lifespan=lifespan,
     docs_url="/api/docs",
