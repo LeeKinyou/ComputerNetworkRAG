@@ -9,13 +9,22 @@ from collections import Counter
 from datetime import timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent import TERMINAL, emit, execute_run, start_run
+from app.auth import (
+    authenticate,
+    clear_session_cookie,
+    current_account,
+    ensure_owner,
+    require_teacher,
+    scoped_user_key,
+    set_session_cookie,
+)
 from app.config import settings
 from app.db import get_session
 from app.ingest import IngestError, ingest_document
@@ -34,7 +43,7 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 class RunCreate(BaseModel):
     message: str = Field(min_length=1, max_length=8000)
     mode: str = "rag"
-    user_key: str = Field(default="demo_user", max_length=64)
+    user_key: str | None = Field(default=None, max_length=64)
 
 
 class RunInput(BaseModel):
@@ -45,7 +54,7 @@ class RunInput(BaseModel):
 class SessionCreate(BaseModel):
     course_id: str = COURSE_ID
     title: str | None = None
-    user_key: str = Field(default="demo_user", max_length=64)
+    user_key: str | None = Field(default=None, max_length=64)
 
 
 class SearchRequest(BaseModel):
@@ -74,11 +83,42 @@ async def health() -> dict:
     return {
         "status": "ok",
         "db_backend": settings.db_backend,
+        "auth_enabled": settings.auth_enabled,
         "llm_ready": settings.llm_ready,
         "retriever_ready": retriever.ready,
         "vector_mode": retriever.vector_mode,
         "embedder": retriever.embedder_label,
     }
+
+
+class LoginIn(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=128)
+
+
+@router.post("/auth/login")
+async def login(payload: LoginIn, response: Response) -> dict:
+    account = authenticate(payload.username, payload.password)
+    if account is None:
+        raise _fail(401, "INVALID_CREDENTIALS", "用户名或密码错误")
+    set_session_cookie(response, account)
+    return {"authenticated": True, "user": account.as_dict()}
+
+
+@router.get("/auth/me")
+async def auth_me(request: Request) -> dict:
+    account = current_account(request)
+    return {
+        "authenticated": bool(account),
+        "auth_enabled": settings.auth_enabled,
+        "user": account.as_dict() if account else None,
+    }
+
+
+@router.post("/auth/logout")
+async def logout(response: Response) -> dict:
+    clear_session_cookie(response)
+    return {"authenticated": False}
 
 
 @router.get("/meta")
@@ -394,12 +434,13 @@ async def source_detail(chunk_id: str) -> dict:
 
 
 @router.post("/chat-sessions", status_code=201)
-async def create_session(payload: SessionCreate, session: SessionDep) -> dict:
+async def create_session(payload: SessionCreate, request: Request, session: SessionDep) -> dict:
+    user_key = ensure_owner(current_account(request), payload.user_key)
     chat = ChatSession(
         id=new_id(),
         course_id=payload.course_id,
         title=payload.title or "新会话",
-        user_key=payload.user_key,
+        user_key=user_key,
     )
     session.add(chat)
     await session.commit()
@@ -410,7 +451,7 @@ async def create_session(payload: SessionCreate, session: SessionDep) -> dict:
 async def list_sessions(
     session: SessionDep,
     course_id: str | None = None,
-    user_key: str = Query(..., min_length=1),
+    user_key: str = Depends(scoped_user_key),
 ) -> dict:
     query = select(ChatSession).order_by(ChatSession.created_at.desc())
     if course_id:
@@ -445,7 +486,7 @@ async def list_sessions(
 async def list_messages(
     session_id: str,
     session: SessionDep,
-    user_key: str = Query(..., min_length=1),
+    user_key: str = Depends(scoped_user_key),
 ) -> dict:
     chat = await session.get(ChatSession, session_id)
     _require_owner(chat, user_key, "会话不存在")
@@ -463,16 +504,17 @@ async def list_messages(
 
 
 @router.post("/chat-sessions/{session_id}/runs", status_code=202)
-async def create_run(session_id: str, payload: RunCreate, session: SessionDep) -> dict:
+async def create_run(session_id: str, payload: RunCreate, request: Request, session: SessionDep) -> dict:
+    user_key = ensure_owner(current_account(request), payload.user_key)
     chat = await session.get(ChatSession, session_id)
-    if chat is None or _owner_of(chat) != payload.user_key:
+    if chat is None or _owner_of(chat) != user_key:
         raise _fail(404, "NOT_FOUND", "会话不存在")
     run = Run(
         id=new_id(),
         session_id=session_id,
         course_id=chat.course_id,
         mode=payload.mode,
-        user_key=chat.user_key or payload.user_key,
+        user_key=chat.user_key or user_key,
         question=payload.message,
         status="queued",
     )
@@ -496,7 +538,7 @@ async def create_run(session_id: str, payload: RunCreate, session: SessionDep) -
 async def pending_runs(
     session: SessionDep,
     course_id: str = COURSE_ID,
-    user_key: str = Query(..., min_length=1),
+    user_key: str = Depends(scoped_user_key),
 ) -> dict:
     """等待当前用户审批的运行，工作台可直接批准/拒绝，不必跳到问答页。
 
@@ -535,7 +577,7 @@ async def pending_runs(
 async def get_run(
     run_id: str,
     session: SessionDep,
-    user_key: str = Query(..., min_length=1),
+    user_key: str = Depends(scoped_user_key),
 ) -> dict:
     run = await session.get(Run, run_id)
     _require_owner(run, user_key, "运行不存在")
@@ -558,7 +600,7 @@ async def get_run(
 async def run_steps(
     run_id: str,
     session: SessionDep,
-    user_key: str = Query(..., min_length=1),
+    user_key: str = Depends(scoped_user_key),
 ) -> dict:
     run = await session.get(Run, run_id)
     _require_owner(run, user_key, "运行不存在")
@@ -577,7 +619,7 @@ async def run_events(
     run_id: str,
     session: SessionDep,
     after_seq: int = 0,
-    user_key: str = Query(..., min_length=1),
+    user_key: str = Depends(scoped_user_key),
 ) -> StreamingResponse:
     run = await session.get(Run, run_id)
     _require_owner(run, user_key, "运行不存在")
@@ -632,7 +674,7 @@ async def submit_input(
     run_id: str,
     payload: RunInput,
     session: SessionDep,
-    user_key: str = Query(..., min_length=1),
+    user_key: str = Depends(scoped_user_key),
 ) -> dict:
     run = await session.get(Run, run_id)
     _require_owner(run, user_key, "运行不存在")
@@ -649,7 +691,7 @@ async def submit_input(
 async def cancel_run(
     run_id: str,
     session: SessionDep,
-    user_key: str = Query(..., min_length=1),
+    user_key: str = Depends(scoped_user_key),
 ) -> dict:
     run = await session.get(Run, run_id)
     _require_owner(run, user_key, "运行不存在")
@@ -663,9 +705,15 @@ async def cancel_run(
 
 
 @router.get("/analytics/overview")
-async def analytics_overview(session: SessionDep, course_id: str = COURSE_ID) -> dict:
-    """课程使用统计：真实 run 记录聚合，供学习报告与教师学情页使用。"""
-    runs = (await session.execute(select(Run).where(Run.course_id == course_id))).scalars().all()
+async def analytics_overview(
+    request: Request, session: SessionDep, course_id: str = COURSE_ID
+) -> dict:
+    """课程使用统计：教师看全班，学生只看自己的 run 记录。"""
+    account = current_account(request)
+    stmt = select(Run).where(Run.course_id == course_id)
+    if account is not None and account.role != "teacher":
+        stmt = stmt.where(Run.user_key == account.user_key)
+    runs = (await session.execute(stmt)).scalars().all()
     run_ids = [run.id for run in runs]
     tool_calls = 0
     if run_ids:
@@ -752,7 +800,7 @@ async def analytics_overview(session: SessionDep, course_id: str = COURSE_ID) ->
 class AttemptIn(BaseModel):
     question_id: str = Field(min_length=1, max_length=36)
     answer: str = Field(default="", max_length=8)
-    user_key: str = Field(default="demo_user", max_length=64)
+    user_key: str | None = Field(default=None, max_length=64)
 
 
 def _question_public(question: Question, chapter_title: str = "") -> dict:
@@ -966,8 +1014,9 @@ async def analytics_concepts(
 
 
 @router.get("/analytics/students")
-async def analytics_students(session: SessionDep, course_id: str = COURSE_ID) -> dict:
+async def analytics_students(request: Request, session: SessionDep, course_id: str = COURSE_ID) -> dict:
     """教师端学生名单：从作答记录聚合作答量、正确率与最近活跃时间。"""
+    require_teacher(current_account(request))
     attempts = (
         await session.execute(select(Attempt).where(Attempt.course_id == course_id))
     ).scalars().all()
@@ -1020,7 +1069,8 @@ async def _attempt_stats(session: AsyncSession, user_key: str, course_id: str) -
 
 
 @router.post("/practice/attempts", status_code=201)
-async def create_attempt(payload: AttemptIn, session: SessionDep) -> dict:
+async def create_attempt(payload: AttemptIn, request: Request, session: SessionDep) -> dict:
+    user_key = ensure_owner(current_account(request), payload.user_key)
     question = await session.get(Question, payload.question_id)
     if question is None or question.course_id != COURSE_ID:
         raise _fail(404, "QUESTION_NOT_FOUND", "题目不存在")
@@ -1028,7 +1078,7 @@ async def create_attempt(payload: AttemptIn, session: SessionDep) -> dict:
     attempt = Attempt(
         course_id=COURSE_ID,
         question_id=question.id,
-        user_key=payload.user_key,
+        user_key=user_key,
         chapter_id=question.chapter_id,
         answer=summary["answer"] or "",
         is_correct=summary["correct"],
@@ -1143,7 +1193,7 @@ async def practice_stats(
 async def practice_wrongbook(
     session: SessionDep,
     course_id: str = COURSE_ID,
-    user_key: str = Query(..., min_length=1),
+    user_key: str = Depends(scoped_user_key),
     limit: int = Query(30, ge=1, le=100),
 ) -> dict:
     """错题本：只保留「最近一次作答仍是错」的题，重做对了自动移出。"""
@@ -1237,7 +1287,7 @@ async def practice_wrongbook(
 @router.get("/learning/trend")
 async def learning_trend(
     session: SessionDep,
-    user_key: str = Query(..., min_length=1),
+    user_key: str = Depends(scoped_user_key),
     course_id: str = COURSE_ID,
     days: int = Query(14, ge=7, le=60),
 ) -> dict:
@@ -1298,7 +1348,7 @@ async def learning_trend(
 async def learning_next(
     session: SessionDep,
     course_id: str = COURSE_ID,
-    user_key: str = Query(..., min_length=1),
+    user_key: str = Depends(scoped_user_key),
     limit: int = Query(3, ge=1, le=6),
 ) -> dict:
     """按掌握度与先修关系给出「下一步做什么」；只做建议，不改任何数据。"""

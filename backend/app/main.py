@@ -21,6 +21,7 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from app import agent
 from app.api import router
+from app.auth import current_account
 from app.config import STATIC_DIR, settings
 from app.db import SessionFactory, init_db, shutdown_db
 from app.retrieval import retriever
@@ -96,6 +97,42 @@ async def request_id_middleware(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Request-ID"] = request_id
     return response
+
+
+# 登录后才有权访问的接口；其余 /api 一律要求会话
+AUTH_PUBLIC_PATHS = {
+    "/api/v2/auth/login",
+    "/api/v2/auth/me",
+    "/api/v2/auth/logout",
+    "/api/v2/health",
+    "/api/docs",
+    "/api/openapi.json",
+    "/api/redoc",
+}
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    if not settings.auth_enabled:
+        return await call_next(request)
+    path = request.url.path
+    if not path.startswith("/api/") or path in AUTH_PUBLIC_PATHS:
+        return await call_next(request)
+    account = current_account(request)
+    if account is None:
+        return JSONResponse(
+            status_code=401,
+            content={"error": {"code": "UNAUTHORIZED", "message": "请先登录"}},
+        )
+    # 学生不得借 query 参数读别人的数据；教师可指定 student 的 user_key
+    if account.role != "teacher":
+        requested = request.query_params.get("user_key")
+        if requested and requested != account.user_key:
+            return JSONResponse(
+                status_code=403,
+                content={"error": {"code": "FORBIDDEN", "message": "只能访问自己的数据"}},
+            )
+    return await call_next(request)
 
 
 app.include_router(router)

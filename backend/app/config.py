@@ -23,6 +23,15 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_secret_key: str = "dev-secret"
 
+    # 鉴权：AUTH_ACCOUNTS 格式为 username:role:password，多条用 ; 分隔
+    auth_enabled: bool = True
+    auth_accounts: str = (
+        "teacher:teacher:teacher2026;"
+        "demo_user:student:demo2026;"
+        "stu_lin:student:lin2026;"
+        "stu_zhao:student:zhao2026"
+    )
+
     db_backend: str = "sqlite"
     db_sqlite_path: str = "./runtime/app.db"
     db_sqlite_busy_timeout_ms: int = 5000
