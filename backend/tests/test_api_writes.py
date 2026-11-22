@@ -250,7 +250,8 @@ async def test_upload_rejects_oversize_file(monkeypatch, stub_agent, fresh_retri
             f"/api/v2/courses/{COURSE_ID}/documents",
             files={"file": ("big.md", b"x" * 20, "text/markdown")},
         )
-        assert response.status_code == 422
+        # 上限 +1 字节前置拦截：超限不再先整包读入，状态码用标准 413
+        assert response.status_code == 413
         assert response.json()["error"]["code"] == "FILE_TOO_LARGE"
 
 

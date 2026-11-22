@@ -33,7 +33,7 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 class RunCreate(BaseModel):
     message: str = Field(min_length=1, max_length=8000)
-    mode: str = "course_qa"
+    mode: str = "rag"
     user_key: str = Field(default="demo_user", max_length=64)
 
 
@@ -242,7 +242,11 @@ async def upload_document(
 ) -> dict:
     if course_id != COURSE_ID:
         raise _fail(404, "NOT_FOUND", "课程不存在")
-    data = await file.read()
+    # 先按上限 +1 字节读，避免超大文件在校验前就整包进内存
+    limit = settings.max_upload_bytes
+    data = await file.read(limit + 1)
+    if len(data) > limit:
+        raise _fail(413, "FILE_TOO_LARGE", f"文件超过 {limit} 字节上限")
     try:
         document = await ingest_document(
             session,
@@ -372,6 +376,9 @@ async def document_citations(
 
 @router.post("/search")
 async def search(payload: SearchRequest, session: SessionDep) -> dict:
+    # 当前只加载一门课程：显式校验，避免接收后忽略导致多课程时跨课召回
+    if payload.course_id != COURSE_ID:
+        raise _fail(404, "NOT_FOUND", "课程不存在")
     if not retriever.ready:
         await retriever.refresh(session)
     results = retriever.search(payload.query, top_k=payload.top_k)
@@ -697,14 +704,17 @@ async def analytics_overview(session: SessionDep, course_id: str = COURSE_ID) ->
     documents = (
         await session.execute(select(Document).where(Document.course_id == course_id))
     ).scalars().all()
-    chapter_of_doc = {doc.title: doc.chapter_id for doc in documents}
+    # 章节归因优先按 document_id 映射；标题只在旧引用缺 id 时兜底，避免同名文档串章节
+    chapter_of_doc = {doc.id: doc.chapter_id for doc in documents}
+    chapter_of_title = {doc.title: doc.chapter_id for doc in documents}
     chapter_hits: Counter[str] = Counter()
     doc_hits: Counter[str] = Counter()
     for run in runs:
         for citation in run.citations or []:
             title = str(citation.get("title") or "")
             doc_hits[title] += 1
-            chapter_id = chapter_of_doc.get(title)
+            document_id = str(citation.get("document_id") or "")
+            chapter_id = chapter_of_doc.get(document_id) or chapter_of_title.get(title)
             if chapter_id:
                 chapter_hits[chapter_id] += 1
     total_hits = sum(chapter_hits.values()) or 1
@@ -1190,7 +1200,8 @@ async def practice_wrongbook(
                 "last_wrong_at": iso(attempt.created_at),
             }
         )
-    items.sort(key=lambda item: (-item["wrong"], item["last_wrong_at"]))
+    # 错得多的优先；同次数时最近错的排前面（此前是升序，实际把最早错的顶上来）
+    items.sort(key=lambda item: (item["wrong"], item["last_wrong_at"] or ""), reverse=True)
 
     groups: dict[str, dict] = {}
     for item in items:

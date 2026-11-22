@@ -112,7 +112,7 @@ class Run(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     session_id: Mapped[str] = mapped_column(ForeignKey("chat_sessions.id", ondelete="CASCADE"), index=True)
     course_id: Mapped[str] = mapped_column(String(36), index=True)
-    mode: Mapped[str] = mapped_column(String(24), default="course_qa")
+    mode: Mapped[str] = mapped_column(String(24), default="rag")
     user_key: Mapped[str] = mapped_column(String(64), default="demo_user")
     question: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16), default="queued")
