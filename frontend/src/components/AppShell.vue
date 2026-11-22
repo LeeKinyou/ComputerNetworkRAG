@@ -9,6 +9,7 @@ import {
   ChevronDown,
   HelpCircle,
   LayoutDashboard,
+  LogOut,
   Moon,
   PenLine,
   Route as RouteIcon,
@@ -20,38 +21,54 @@ import {
   Waypoints,
 } from 'lucide-vue-next'
 import { api } from '@/api/client'
+import { useAuth } from '@/composables/useAuth'
 import { useTheme } from '@/composables/useTheme'
 import { useStudent } from '@/composables/useStudent'
 
 const route = useRoute()
 const router = useRouter()
 const { currentKey, current, students, setStudent } = useStudent()
+const { user, authEnabled, logout } = useAuth()
+
+const isTeacher = computed(() => user.value?.role === 'teacher')
+/** 教师可切学生；关闭鉴权的本地演示模式也保留下拉。 */
+const canSwitch = computed(() => isTeacher.value || !authEnabled.value)
 
 function onStudentChange(event: Event) {
   setStudent((event.target as HTMLSelectElement).value)
 }
+
+async function onLogout() {
+  await logout()
+  await router.replace({ path: '/login' })
+}
 const { isDark, toggle } = useTheme()
 
-const navGroups = [
-  {
-    title: '',
-    items: [
-      { to: '/', label: '工作台', icon: LayoutDashboard },
-      { to: '/chat', label: '智能问答', icon: Bot },
-      { to: '/practice', label: '练习中心', icon: PenLine },
-      { to: '/wrongbook', label: '错题本', icon: BookMarked },
-      { to: '/graph', label: '知识图谱', icon: Waypoints },
-      { to: '/path', label: '学习计划', icon: RouteIcon },
-      { to: '/documents', label: '知识库', icon: BookOpen },
-      { to: '/progress', label: '学习报告', icon: TrendingUp },
-      { to: '/profile', label: '我的', icon: UserRound },
-    ],
-  },
-  {
-    title: '教师视图',
-    items: [{ to: '/insights', label: '学情分析', icon: BarChart3 }],
-  },
-]
+const navGroups = computed(() => {
+  const groups = [
+    {
+      title: '',
+      items: [
+        { to: '/', label: '工作台', icon: LayoutDashboard },
+        { to: '/chat', label: '智能问答', icon: Bot },
+        { to: '/practice', label: '练习中心', icon: PenLine },
+        { to: '/wrongbook', label: '错题本', icon: BookMarked },
+        { to: '/graph', label: '知识图谱', icon: Waypoints },
+        { to: '/path', label: '学习计划', icon: RouteIcon },
+        { to: '/documents', label: '知识库', icon: BookOpen },
+        { to: '/progress', label: '学习报告', icon: TrendingUp },
+        { to: '/profile', label: '我的', icon: UserRound },
+      ],
+    },
+  ]
+  if (isTeacher.value) {
+    groups.push({
+      title: '教师视图',
+      items: [{ to: '/insights', label: '学情分析', icon: BarChart3 }],
+    })
+  }
+  return groups
+})
 
 const labels: Record<string, string> = {
   overview: '工作台',
@@ -266,11 +283,12 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
           </button>
           <button class="icon-btn"><HelpCircle :size="16" /></button>
           <label
+            v-if="canSwitch"
             class="ml-1 flex h-7 items-center gap-1.5 rounded-full bg-brand-soft pl-1 pr-1.5"
-            :title="current.note"
+            :title="isTeacher ? `教师 · 可切换学生` : current.note"
           >
             <span class="grid h-5 w-5 place-items-center rounded-full bg-brand text-[10px] font-semibold text-white">
-              {{ current.initial }}
+              {{ isTeacher ? '师' : current.initial }}
             </span>
             <select
               :value="currentKey"
@@ -282,6 +300,25 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
             </select>
             <ChevronDown :size="11" class="-ml-3.5 text-brand" />
           </label>
+          <span
+            v-else
+            class="ml-1 flex h-7 items-center gap-1.5 rounded-full bg-brand-soft pl-1 pr-2.5"
+            :title="current.note"
+          >
+            <span class="grid h-5 w-5 place-items-center rounded-full bg-brand text-[10px] font-semibold text-white">
+              {{ current.initial }}
+            </span>
+            <span class="text-[11px] font-semibold text-brand">{{ current.name }} · 学生</span>
+          </span>
+          <button
+            v-if="authEnabled && user"
+            class="icon-btn"
+            aria-label="退出登录"
+            title="退出登录"
+            @click="onLogout"
+          >
+            <LogOut :size="16" />
+          </button>
         </div>
       </header>
 

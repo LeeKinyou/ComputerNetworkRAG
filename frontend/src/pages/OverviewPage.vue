@@ -25,8 +25,11 @@ import type {
   WrongBook,
 } from '@/api/client'
 import { useStudent } from '@/composables/useStudent'
+import { useAuth } from '@/composables/useAuth'
 
 const { currentKey, current } = useStudent()
+const { user } = useAuth()
+const isTeacher = computed(() => user.value?.role === 'teacher')
 
 const plan = ref<LearningPlan | null>(null)
 const concepts = ref<AnalyticsConcept[]>([])
@@ -449,7 +452,7 @@ function timeLabel(value: string) {
           <div v-else class="px-4 py-6 text-center text-[10.5px] text-muted">还没有练习记录</div>
         </section>
 
-        <section class="surface px-4 py-4">
+        <section v-if="isTeacher" class="surface px-4 py-4">
           <h2 class="text-[11.5px] font-medium">班级</h2>
           <p class="mt-1 text-[10px] leading-relaxed text-muted">
             全班已覆盖 {{ classCovered }}/{{ classTotal }} 个知识点。

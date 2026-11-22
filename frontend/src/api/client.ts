@@ -204,9 +204,17 @@ export interface LearningPlan {
 
 const BASE = '/api/v2'
 
+/** 401 时由入口层挂上「回登录页」的动作，避免 client 直接依赖 router。 */
+let onUnauthorized: (() => void) | null = null
+
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  onUnauthorized = handler
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${BASE}${path}`, {
     ...init,
+    credentials: 'include',
     headers: {
       ...(init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
       ...(init?.headers ?? {}),
@@ -214,6 +222,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as ApiErrorBody | null
+    // 登录相关接口的 401 是业务失败，不触发全局跳转
+    if (response.status === 401 && !path.startsWith('/auth/')) onUnauthorized?.()
     throw new ApiError(
       response.status,
       body?.error?.code ?? 'HTTP_ERROR',
@@ -250,9 +260,11 @@ export async function streamRunEvents(
   if (options.userKey) query.set('user_key', options.userKey)
   const response = await fetch(`${BASE}/runs/${runId}/events?${query.toString()}`, {
     signal: options.signal,
+    credentials: 'include',
     headers: { Accept: 'text/event-stream' },
   })
   if (!response.ok || !response.body) {
+    if (response.status === 401) onUnauthorized?.()
     throw new ApiError(response.status, 'SSE_FAILED', '事件流连接失败')
   }
   const reader = response.body.getReader()

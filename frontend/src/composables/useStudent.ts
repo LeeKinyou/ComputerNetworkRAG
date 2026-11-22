@@ -25,7 +25,22 @@ function readStored(): string {
 const currentKey = ref(readStored())
 const current = computed(() => STUDENT_OPTIONS.find((item) => item.key === currentKey.value) ?? FALLBACK)
 
+/** 学生会话下钉死自己的 key：localStorage 被改也不会去请求别人的数据。 */
+let lockedKey: string | null = null
+
+export function lockStudent(key: string) {
+  if (!STUDENT_OPTIONS.some((item) => item.key === key)) return
+  lockedKey = key
+  currentKey.value = key
+  localStorage.setItem(STORAGE_KEY, key)
+}
+
+export function unlockStudent() {
+  lockedKey = null
+}
+
 export function setStudent(key: string) {
+  if (lockedKey) return
   if (!STUDENT_OPTIONS.some((item) => item.key === key) || key === currentKey.value) return
   currentKey.value = key
   localStorage.setItem(STORAGE_KEY, key)

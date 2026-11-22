@@ -4,11 +4,11 @@ import { useRoute } from 'vue-router'
 import AppShell from '@/components/AppShell.vue'
 
 const route = useRoute()
-const fullscreen = computed(() => route.meta.fullscreen === true)
+const bare = computed(() => route.meta.bare === true || route.meta.fullscreen === true)
 </script>
 
 <template>
-  <RouterView v-if="fullscreen" />
+  <RouterView v-if="bare" />
   <AppShell v-else>
     <RouterView />
   </AppShell>
