@@ -52,9 +52,6 @@ watch(currentKey, load)
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
         <h1 class="text-[26px] font-semibold leading-tight tracking-[-0.025em]">错题本</h1>
-        <p class="mt-1.5 max-w-[620px] text-[12.5px] leading-relaxed text-muted">
-          只留「最近一次作答还是错」的题，重做对了会自动移出；按知识点聚合，方便整块补。
-        </p>
       </div>
       <RouterLink
         :to="retryAllLink"

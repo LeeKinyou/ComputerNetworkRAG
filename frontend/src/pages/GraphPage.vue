@@ -252,16 +252,13 @@ watch(currentKey, () => {
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
         <h1 class="text-[26px] font-semibold leading-tight tracking-[-0.025em]">知识图谱</h1>
-        <p class="mt-1.5 max-w-[620px] text-[12.5px] leading-relaxed text-muted">
-          节点颜色是掌握程度，连线是关系类型：实线箭头为先修，虚线为包含，点线为关联。点节点看定义、原文出处、下一步学什么，以及能直接练的题。
-        </p>
       </div>
       <div class="relative">
         <Search :size="14" class="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
         <input
           v-model="query"
           type="text"
-          placeholder="搜索知识点，回车定位"
+          placeholder="搜索知识点"
           class="h-9 w-[248px] rounded-full border border-line bg-surface pl-9 pr-4 text-[12.5px] text-ink outline-none transition-colors placeholder:text-muted focus:border-brand/50 focus:ring-2 focus:ring-brand/10"
           @keydown.enter="search"
         />
@@ -317,8 +314,6 @@ watch(currentKey, () => {
           <span class="flex items-center gap-1.5">
             <span class="h-px w-5 border-t border-dotted border-[#C2C8D4]" />关联
           </span>
-          <span class="text-line-strong">|</span>
-          <span>点节点高亮相邻链路</span>
         </div>
       </section>
 
@@ -375,7 +370,7 @@ watch(currentKey, () => {
             </ul>
 
             <template v-if="nextSteps.length">
-              <div class="mt-4 text-[10.5px] text-muted">学完它，下一步</div>
+              <div class="mt-4 text-[10.5px] text-muted">下一步</div>
               <div class="mt-2 flex flex-wrap gap-1.5">
                 <button
                   v-for="step in nextSteps"

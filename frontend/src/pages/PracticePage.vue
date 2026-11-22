@@ -265,9 +265,6 @@ onUnmounted(() => {
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
         <h1 class="text-[26px] font-semibold leading-tight tracking-[-0.025em]">练习中心</h1>
-        <p class="mt-1.5 max-w-[600px] text-[12.5px] leading-relaxed text-muted">
-          按章节组卷，答完即时批改并给出解析；错题会记进学习报告，攒够几题再回问答里问透。
-        </p>
       </div>
       <div class="flex flex-wrap items-center gap-1.5">
         <span
@@ -582,17 +579,6 @@ onUnmounted(() => {
               换一组题
             </button>
           </div>
-        </section>
-
-        <section class="surface p-4">
-          <div class="flex items-center gap-1.5 text-[10.5px] font-medium text-subink">
-            <Sparkles :size="12" class="text-brand" />
-            答题小提示
-          </div>
-          <p class="mt-2 text-[10px] leading-[1.75] text-muted">
-            子网题先算块大小，再判断地址落在哪一块；掩码题注意「可用主机」要去掉网络与广播地址。
-            答错后点「问助教」，会把这道题带进问答里逐句讲。
-          </p>
         </section>
       </div>
     </div>

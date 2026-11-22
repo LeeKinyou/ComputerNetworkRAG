@@ -19,7 +19,6 @@ import {
   Search,
   ShieldAlert,
   Sparkles,
-  Square,
   StickyNote,
   Wrench,
   Zap,
@@ -424,7 +423,7 @@ function toArtifact(card: Card, index: number, task: Task): Artifact {
     title: card.title ?? (isCalc ? '子网计算结果' : '本次回答'),
     summary: isCalc
       ? `网络 ${data.network_address ?? ''} · 可用 ${data.usable_host_count ?? 0} 个主机`
-      : '来自本次回答，可继续追问或存为笔记',
+      : '来自本次回答',
     meta: card.tool,
     taskId: task.id,
     createdAt: '刚刚',
@@ -725,7 +724,7 @@ function applyEvent(task: Task, type: string, payload: RunEventPayload) {
                   }}
                 </p>
                 <p class="mt-1 text-[10.5px] leading-relaxed text-muted">
-                  {{ activeTask.pending?.prompt ?? '该请求会修改课程索引，需要你确认后执行。' }}
+                  {{ activeTask.pending?.prompt ?? '需要你确认' }}
                 </p>
                 <div class="mt-3 flex gap-2">
                   <button class="pill-btn h-8 bg-ink px-3 text-[11px] text-canvas" :disabled="streaming" @click="decide(true)">
@@ -846,7 +845,7 @@ function applyEvent(task: Task, type: string, payload: RunEventPayload) {
             <input
               v-model="input"
               type="text"
-              placeholder="继续追问，或换一个前缀试试，例如：换成 /28 呢？"
+              placeholder="输入问题"
               class="h-7 min-w-0 flex-1 bg-transparent text-[12.5px] outline-none placeholder:text-muted"
               @keydown.enter="send"
             />
@@ -858,12 +857,8 @@ function applyEvent(task: Task, type: string, payload: RunEventPayload) {
               <ArrowUp :size="13" />
             </button>
           </div>
-          <div class="mt-1.5 flex items-center justify-between text-[9.5px] text-muted">
+          <div class="mt-1.5 text-[9.5px] text-muted">
             <span>Enter 发送 · Shift+Enter 换行</span>
-            <span class="flex items-center gap-1">
-              <Square :size="9" />
-              回答有引用，关键结论请对照原文
-            </span>
           </div>
         </div>
       </div>
@@ -995,13 +990,6 @@ function applyEvent(task: Task, type: string, payload: RunEventPayload) {
             </button>
           </div>
         </template>
-      </div>
-
-      <div class="shrink-0 border-t border-line p-2.5">
-        <div class="flex items-center justify-between rounded-xl bg-tint-soft px-3 py-2">
-          <span class="text-[9.5px] text-muted">任务 ID</span>
-          <span class="font-mono text-[9px] text-subink">{{ activeTask?.id ?? '—' }}</span>
-        </div>
       </div>
     </aside>
 

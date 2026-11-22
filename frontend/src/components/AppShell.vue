@@ -180,12 +180,6 @@ const backendTitle = computed(() => {
   if (dbBackend.value === 'sqlite') return 'SQLite · 单进程'
   return '单进程 · 单端口'
 })
-const backendHint = computed(() => {
-  if (dbBackend.value === 'postgresql') return '远程数据库 + 本地索引，单端口部署'
-  if (dbBackend.value === 'sqlite') return 'SQLite + 本地索引，无需外部中间件'
-  return '数据库与索引同进程提供'
-})
-
 async function loadHealth() {
   try {
     const health = await api.get<{ db_backend?: string }>('/health')
@@ -244,15 +238,10 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
         </template>
       </nav>
 
-      <div class="mt-auto p-3">
-        <div class="rounded-2xl border border-line bg-surface/70 p-3 backdrop-blur">
-          <div class="flex items-center gap-1.5 text-[11px] font-medium text-subink">
-            <span class="h-1.5 w-1.5 rounded-full bg-success" />
-            {{ backendTitle }}
-          </div>
-          <p class="mt-1.5 text-[11px] leading-relaxed text-muted">
-            {{ backendHint }}
-          </p>
+      <div class="mt-auto px-4 py-3">
+        <div class="flex items-center gap-1.5 text-[10.5px] text-muted">
+          <span class="h-1.5 w-1.5 rounded-full bg-success" />
+          {{ backendTitle }}
         </div>
       </div>
     </aside>

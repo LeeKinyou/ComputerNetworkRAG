@@ -19,9 +19,6 @@ const pipeline = [
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
         <h1 class="text-[26px] font-semibold leading-tight tracking-[-0.025em]">RAG 问答</h1>
-        <p class="mt-1.5 max-w-[620px] text-[13px] leading-relaxed text-muted">
-          纯检索增强问答：一次查询走完召回、融合、重排与生成，结果全部带原文出处。不涉及工具调用与多步推理。
-        </p>
       </div>
     </div>
 

@@ -119,9 +119,6 @@ function exportAttempts() {
   <div class="animate-fade-up px-9 py-8">
     <div>
       <h1 class="text-[26px] font-semibold leading-tight tracking-[-0.025em]">我的</h1>
-      <p class="mt-1.5 text-[12.5px] text-muted">
-        当前身份下的练习记录与问答历史；切换学生后这里会跟着变。
-      </p>
     </div>
 
     <div class="mt-6 grid items-start gap-4 xl:grid-cols-[296px_1fr]">

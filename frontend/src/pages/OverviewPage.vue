@@ -87,9 +87,9 @@ const headline = computed(() =>
 )
 const subline = computed(() => {
   if (!tasks.value.length) {
-    return `当前覆盖 ${plan.value?.summary.covered ?? 0}/${plan.value?.summary.total ?? 0} 个知识点，可以继续往后推进。`
+    return `当前覆盖 ${plan.value?.summary.covered ?? 0}/${plan.value?.summary.total ?? 0} 个知识点`
     }
-  return `${tasks.value.length} 项任务，约 ${totalMinutes.value} 分钟。按顺序做完，最弱的点会先被补上。`
+  return `${tasks.value.length} 项任务，约 ${totalMinutes.value} 分钟`
 })
 
 const taskIcon = { learn: BookOpen, review: RefreshCw, practice: PenLine }
@@ -283,7 +283,6 @@ function timeLabel(value: string) {
             <div class="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 class="text-[17px] font-semibold tracking-tight">{{ focusChapter.title }}</h3>
-                <p class="mt-1 text-[11.5px] text-muted">这一章正确率 {{ focusChapter.rate }}%，是当前最需要收尾的一章。</p>
               </div>
               <span class="font-mono text-[11px]" :class="focusChapter.rate < 60 ? 'text-warn' : 'text-muted'">
                 {{ focusChapter.rate }}%

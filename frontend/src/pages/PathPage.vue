@@ -2,7 +2,6 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  ArrowRight,
   BookOpen,
   Clock,
   CircleHelp,
@@ -83,9 +82,6 @@ watch(currentKey, load)
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
         <h1 class="text-[26px] font-semibold leading-tight tracking-[-0.025em]">学习计划</h1>
-        <p class="mt-1.5 max-w-[640px] text-[12.5px] leading-relaxed text-muted">
-          按练习记录和知识点先修关系排的，不是固定课表；做完一批、错题清理后会自动往前挪。
-        </p>
       </div>
       <button
         class="pill-btn h-9 border border-line bg-surface text-subink hover:border-line-strong hover:text-ink"
@@ -195,10 +191,5 @@ watch(currentKey, load)
         </li>
       </ul>
     </section>
-
-    <p class="mt-3 flex items-center gap-1.5 px-1 text-[10px] text-muted">
-      <ArrowRight :size="11" />
-      任务按「薄弱 → 未练 → 巩固」排序；一个概念的先修还没掌握时，会先插一条前置任务。
-    </p>
   </div>
 </template>

@@ -275,9 +275,6 @@ onMounted(() => {
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
         <h1 class="text-[26px] font-semibold leading-tight tracking-[-0.025em]">知识库</h1>
-        <p class="mt-1.5 max-w-[600px] text-[12.5px] leading-relaxed text-muted">
-          课程材料的统一入口：解析、分块、建索引，并把每个分块挂到知识点上。
-        </p>
       </div>
       <button
         class="pill-btn h-9 bg-ink pl-3.5 text-canvas hover:opacity-90 disabled:opacity-50"

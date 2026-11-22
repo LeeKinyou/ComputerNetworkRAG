@@ -202,12 +202,6 @@ function exportCsv() {
           学情分析
           <span v-if="scopeName" class="text-[18px] font-medium text-muted">· {{ scopeName }}</span>
         </h1>
-        <p v-if="scope" class="mt-1.5 max-w-[600px] text-[12.5px] leading-relaxed text-muted">
-          单个学生视角：下面的掌握分布、薄弱点、一键组卷与导出都只统计 {{ scopeName }} 的作答。
-        </p>
-        <p v-else class="mt-1.5 max-w-[600px] text-[12.5px] leading-relaxed text-muted">
-          教师视角：这周学生卡在哪，哪些问题值得在课上讲，哪些知识点该补一份练习。
-        </p>
       </div>
       <div class="flex items-center gap-2">
         <select

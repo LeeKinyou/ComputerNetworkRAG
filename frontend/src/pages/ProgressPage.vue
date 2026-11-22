@@ -213,9 +213,6 @@ function retry(conceptId: string | null) {
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
         <h1 class="text-[26px] font-semibold leading-tight tracking-[-0.025em]">学习报告</h1>
-        <p class="mt-1.5 max-w-[600px] text-[12.5px] leading-relaxed text-muted">
-          你自己的学习轨迹：学到哪、卡在哪、下一步做什么。这里不做班级排名。
-        </p>
       </div>
       <div class="flex items-center gap-0.5 rounded-full bg-tint p-0.5">
         <button
