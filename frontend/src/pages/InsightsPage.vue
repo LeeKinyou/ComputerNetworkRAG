@@ -11,8 +11,14 @@ import {
 } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import { api } from '@/api/client'
-import type { AnalyticsConcept, AnalyticsOverview } from '@/api/client'
+import type {
+  AnalyticsConcept,
+  AnalyticsOverview,
+  AnalyticsStudent,
+  LearningTrend,
+} from '@/api/client'
 import { insights } from '@/mock/workbench'
+import { STUDENT_OPTIONS } from '@/composables/useStudent'
 
 const router = useRouter()
 const range = ref<'week' | 'month'>('week')
@@ -22,6 +28,64 @@ const concepts = ref<AnalyticsConcept[]>([])
 const conceptTotal = ref(0)
 const conceptCovered = ref(0)
 const chapterTitles = ref<Record<string, string>>({})
+// 教师端视角切换：'' = 全班，否则只统计某个学生
+const scope = ref('')
+const students = ref<AnalyticsStudent[]>([])
+const trend = ref<LearningTrend | null>(null)
+
+const studentOptions = computed(() =>
+  students.value.map((item) => ({
+    key: item.user_key,
+    name: STUDENT_OPTIONS.find((option) => option.key === item.user_key)?.name ?? item.user_key,
+    attempts: item.attempts,
+    rate: item.rate,
+  })),
+)
+
+const scopeName = computed(
+  () => studentOptions.value.find((item) => item.key === scope.value)?.name ?? '',
+)
+
+async function loadConcepts() {
+  try {
+    const query = scope.value ? `?user_key=${scope.value}` : ''
+    const result = await api.get<{
+      items: AnalyticsConcept[]
+      total_concepts: number
+      covered_concepts: number
+    }>(`/analytics/concepts${query}`)
+    concepts.value = result.items
+    conceptTotal.value = result.total_concepts
+    conceptCovered.value = result.covered_concepts
+  } catch {
+    concepts.value = []
+  }
+}
+
+async function loadScope() {
+  if (!scope.value) {
+    trend.value = null
+    await loadConcepts()
+    return
+  }
+  const [, trendResult] = await Promise.all([
+    loadConcepts(),
+    api
+      .get<LearningTrend>(`/learning/trend?user_key=${scope.value}&days=14`)
+      .then((result) => result)
+      .catch(() => null),
+  ])
+  trend.value = trendResult
+}
+
+async function loadStudents() {
+  try {
+    const result = await api.get<{ items: AnalyticsStudent[] }>('/analytics/students')
+    students.value = result.items
+  } catch {
+    students.value = []
+  }
+}
 
 onMounted(async () => {
   try {
@@ -39,18 +103,20 @@ onMounted(async () => {
   } catch {
     stats.value = null
   }
-  try {
-    const result = await api.get<{
-      items: AnalyticsConcept[]
-      total_concepts: number
-      covered_concepts: number
-    }>('/analytics/concepts')
-    concepts.value = result.items
-    conceptTotal.value = result.total_concepts
-    conceptCovered.value = result.covered_concepts
-  } catch {
-    concepts.value = []
-  }
+  void loadStudents()
+  await loadConcepts()
+})
+
+const scopedPending = computed(
+  () => concepts.value.filter((item) => item.state === 'weak' || item.state === 'no_data').length,
+)
+const weakCount = computed(() => concepts.value.filter((item) => item.state === 'weak').length)
+const untriedCount = computed(() => concepts.value.filter((item) => !item.attempts).length)
+const rateDeltaText = computed(() => {
+  if (!trend.value) return ''
+  const delta = trend.value.rate_delta
+  if (!delta) return '与上周持平'
+  return delta > 0 ? `较上周 ↑ ${delta} pt` : `较上周 ↓ ${Math.abs(delta)} pt`
 })
 
 function conceptTone(state: AnalyticsConcept['state']) {
@@ -121,7 +187,7 @@ function exportCsv() {
   const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' })
   const link = document.createElement('a')
   link.href = URL.createObjectURL(blob)
-  link.download = '学情分析-概念.csv'
+  link.download = scope.value && scopeName.value ? `学情分析-${scopeName.value}.csv` : '学情分析-概念.csv'
   link.click()
   URL.revokeObjectURL(link.href)
   act('已导出概念学情 CSV')
@@ -132,12 +198,28 @@ function exportCsv() {
   <div class="animate-fade-up px-9 py-8">
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
-        <h1 class="text-[26px] font-semibold leading-tight tracking-[-0.025em]">学情分析</h1>
-        <p class="mt-1.5 max-w-[600px] text-[12.5px] leading-relaxed text-muted">
+        <h1 class="text-[26px] font-semibold leading-tight tracking-[-0.025em]">
+          学情分析
+          <span v-if="scopeName" class="text-[18px] font-medium text-muted">· {{ scopeName }}</span>
+        </h1>
+        <p v-if="scope" class="mt-1.5 max-w-[600px] text-[12.5px] leading-relaxed text-muted">
+          单个学生视角：下面的掌握分布、薄弱点、一键组卷与导出都只统计 {{ scopeName }} 的作答。
+        </p>
+        <p v-else class="mt-1.5 max-w-[600px] text-[12.5px] leading-relaxed text-muted">
           教师视角：这周学生卡在哪，哪些问题值得在课上讲，哪些知识点该补一份练习。
         </p>
       </div>
       <div class="flex items-center gap-2">
+        <select
+          v-model="scope"
+          class="h-9 rounded-full border border-line bg-surface px-3 text-[11px] text-subink outline-none transition-colors hover:border-line-strong"
+          @change="loadScope"
+        >
+          <option value="">全班学生</option>
+          <option v-for="s in studentOptions" :key="s.key" :value="s.key">
+            {{ s.name }} · {{ s.attempts }} 题
+          </option>
+        </select>
         <div class="flex items-center gap-0.5 rounded-full bg-tint p-0.5">
           <button
             class="rounded-full px-2.5 py-1 text-[10.5px] transition-colors"
@@ -168,25 +250,40 @@ function exportCsv() {
       <div class="px-5 py-4">
         <div class="flex items-center gap-1.5 text-[10px] text-muted">
           <BarChart3 :size="11" />
-          {{ insights.className }}
+          {{ scope ? `${scopeName} · 本周练习` : insights.className }}
         </div>
         <div class="mt-2 flex items-end gap-2">
           <span class="text-[28px] font-semibold leading-none tracking-[-0.03em]">
-            {{ weeklyQuestions }}
+            {{ scope ? trend?.this_week.attempts ?? 0 : weeklyQuestions }}
           </span>
-          <span class="mb-0.5 text-[11px] text-muted">次提问 · 本周</span>
+          <span class="mb-0.5 text-[11px] text-muted">
+            {{ scope ? '次作答 · 本周' : '次提问 · 本周' }}
+          </span>
         </div>
-        <p class="mt-2 text-[9.5px] text-muted">{{ modeLine }}</p>
+        <p class="mt-2 text-[9.5px]" :class="scope ? 'text-subink' : 'text-muted'">
+          {{ scope ? `正确率 ${trend?.this_week.rate ?? 0}% · ${rateDeltaText}` : modeLine }}
+        </p>
       </div>
       <div class="px-5 py-4">
         <div class="flex items-center gap-1.5 text-[10px] text-muted">
           <Flame :size="11" />
-          最热问题
+          {{ scope ? '待补知识点' : '最热问题' }}
         </div>
-        <p class="mt-2 line-clamp-1 text-[12.5px] font-medium text-ink">
-          {{ hotQuestion }}
-        </p>
-        <p class="mt-2 text-[9.5px] text-muted">{{ hotCount }} 次被问到，建议课上统一讲</p>
+        <template v-if="scope">
+          <p class="mt-2 text-[12.5px] font-medium text-ink">
+            {{ scopedPending }} 个待补
+            <span class="text-[10px] font-normal text-muted">/ {{ conceptTotal }} 个知识点</span>
+          </p>
+          <p class="mt-2 text-[9.5px] text-muted">
+            薄弱 {{ weakCount }} 个 · 未练 {{ untriedCount }} 个
+          </p>
+        </template>
+        <template v-else>
+          <p class="mt-2 line-clamp-1 text-[12.5px] font-medium text-ink">
+            {{ hotQuestion }}
+          </p>
+          <p class="mt-2 text-[9.5px] text-muted">{{ hotCount }} 次被问到，建议课上统一讲</p>
+        </template>
       </div>
       <div class="px-5 py-4">
         <div class="flex items-center gap-1.5 text-[10px] text-muted">
@@ -196,7 +293,8 @@ function exportCsv() {
         <p class="mt-2 text-[12.5px] font-medium text-ink">{{ weakest?.title ?? '暂无薄弱点' }}</p>
         <p class="mt-2 text-[9.5px] text-warn">
           正确率 {{ weakest?.rate ?? 0 }}%
-          <template v-if="weakest?.weak_students"> · {{ weakest.weak_students }} 人薄弱</template>
+          <template v-if="scope"> · 本人</template>
+          <template v-else-if="weakest?.weak_students"> · {{ weakest.weak_students }} 人薄弱</template>
         </p>
       </div>
     </section>
@@ -209,7 +307,9 @@ function exportCsv() {
               <Target :size="14" class="text-muted" />
               <h2 class="text-[12.5px] font-medium">章节关注度</h2>
             </div>
-            <span class="text-[9.5px] text-muted">按引用命中的章节统计</span>
+            <span class="text-[9.5px] text-muted">
+              {{ scope ? '全班提问 · 不随学生切换' : '按引用命中的章节统计' }}
+            </span>
           </header>
           <div class="flex flex-col gap-3.5 p-5">
             <div v-for="c in chapterRows" :key="c.label">
@@ -265,8 +365,8 @@ function exportCsv() {
                 />
               </div>
               <p class="mt-1 text-[9px] text-muted">
-                {{ concept.attempts }} 次作答 · {{ concept.students }} 人
-                <span v-if="concept.weak_students" class="text-[#B9761D]">
+                {{ concept.attempts }} 次作答 · {{ scope ? '本人' : `${concept.students} 人` }}
+                <span v-if="concept.weak_students && !scope" class="text-[#B9761D]">
                   · {{ concept.weak_students }} 人薄弱
                 </span>
               </p>

@@ -12,7 +12,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent import TERMINAL, emit, execute_run, start_run
@@ -267,8 +267,12 @@ async def upload_document(
 @router.delete("/documents/{document_id}", status_code=204)
 async def delete_document(document_id: str, session: SessionDep) -> Response:
     document = await session.get(Document, document_id)
-    if document is None or document.id.startswith("doc_seed"):
+    if document is None:
+        raise _fail(404, "NOT_FOUND", "文档不存在")
+    if document.id.startswith("doc_seed"):
         raise _fail(403, "FORBIDDEN", "预置文档不可删除")
+    # 显式清理分块：历史 SQLite 库可能未开启外键，不能只依赖 ON DELETE CASCADE
+    await session.execute(delete(Chunk).where(Chunk.document_id == document_id))
     await session.delete(document)
     await session.commit()
     await retriever.refresh(session)
@@ -276,7 +280,14 @@ async def delete_document(document_id: str, session: SessionDep) -> Response:
 
 
 @router.get("/documents/{document_id}/chunks")
-async def document_chunks(document_id: str, session: SessionDep, limit: int = Query(default=20, le=100)) -> dict:
+async def document_chunks(
+    document_id: str,
+    session: SessionDep,
+    limit: int = Query(default=20, ge=1, le=100),
+) -> dict:
+    document = await session.get(Document, document_id)
+    if document is None:
+        raise _fail(404, "NOT_FOUND", "文档不存在")
     chunks = (
         await session.execute(
             select(Chunk).where(Chunk.document_id == document_id).order_by(Chunk.ordinal).limit(limit)
@@ -761,11 +772,13 @@ async def list_questions(
     shuffle: bool = True,
 ) -> dict:
     stmt = select(Question).where(Question.course_id == course_id)
+    ordered_ids: list[str] | None = None
     if question_ids:
-        # 错题重做：按指定题目组卷，顺序保持传入顺序更符合复习预期
+        # 错题重做：按指定题目组卷，排序以传入顺序为准，更符合复习预期
         ids = [item.strip() for item in question_ids.split(",") if item.strip()][:30]
         if ids:
             stmt = stmt.where(Question.id.in_(ids))
+            ordered_ids = ids
             shuffle = False
     if chapter_id:
         stmt = stmt.where(Question.chapter_id == chapter_id)
@@ -776,6 +789,9 @@ async def list_questions(
         if ids:
             stmt = stmt.where(Question.concept_id.in_(ids))
     questions = (await session.execute(stmt.order_by(Question.sort_order))).scalars().all()
+    if ordered_ids is not None:
+        rank = {question_id: index for index, question_id in enumerate(ordered_ids)}
+        questions = sorted(questions, key=lambda question: rank.get(question.id, len(rank)))
     if shuffle and len(questions) > limit:
         questions = random.sample(questions, limit)
     else:
@@ -937,6 +953,45 @@ async def analytics_concepts(
         "covered_concepts": sum(1 for item in items if item["attempts"]),
         "items": items,
     }
+
+
+@router.get("/analytics/students")
+async def analytics_students(session: SessionDep, course_id: str = COURSE_ID) -> dict:
+    """教师端学生名单：从作答记录聚合作答量、正确率与最近活跃时间。"""
+    attempts = (
+        await session.execute(select(Attempt).where(Attempt.course_id == course_id))
+    ).scalars().all()
+    buckets: dict[str, dict[str, object]] = {}
+    for attempt in attempts:
+        bucket = buckets.setdefault(
+            attempt.user_key,
+            {"attempts": 0, "correct": 0, "questions": set(), "last_at": None},
+        )
+        bucket["attempts"] = int(bucket["attempts"]) + 1  # type: ignore[arg-type]
+        if attempt.is_correct:
+            bucket["correct"] = int(bucket["correct"]) + 1  # type: ignore[arg-type]
+        questions = bucket["questions"]
+        if isinstance(questions, set):
+            questions.add(attempt.question_id)
+        last_at = bucket["last_at"]
+        if attempt.created_at and (last_at is None or attempt.created_at > last_at):
+            bucket["last_at"] = attempt.created_at
+
+    items = [
+        {
+            "user_key": user_key,
+            "attempts": int(bucket["attempts"]),  # type: ignore[arg-type]
+            "correct": int(bucket["correct"]),  # type: ignore[arg-type]
+            "rate": round(int(bucket["correct"]) * 100 / int(bucket["attempts"]))
+            if int(bucket["attempts"])
+            else 0,
+            "questions": len(bucket["questions"]) if isinstance(bucket["questions"], set) else 0,
+            "last_at": iso(bucket["last_at"]) if bucket["last_at"] else None,
+        }
+        for user_key, bucket in buckets.items()
+    ]
+    items.sort(key=lambda item: (-item["attempts"], item["user_key"]))
+    return {"course_id": course_id, "total": len(items), "items": items}
 
 
 async def _attempt_stats(session: AsyncSession, user_key: str, course_id: str) -> dict:
@@ -1165,6 +1220,66 @@ async def practice_wrongbook(
         "concepts_affected": len(ordered_groups),
         "groups": ordered_groups,
         "items": items[:limit],
+    }
+
+
+@router.get("/learning/trend")
+async def learning_trend(
+    session: SessionDep,
+    user_key: str = Query(..., min_length=1),
+    course_id: str = COURSE_ID,
+    days: int = Query(14, ge=7, le=60),
+) -> dict:
+    """按天统计作答与正确率，并给出本周 / 上周对比；学习报告的趋势线用这份数据。"""
+    attempts = (
+        await session.execute(
+            select(Attempt).where(Attempt.course_id == course_id, Attempt.user_key == user_key)
+        )
+    ).scalars().all()
+    today = utcnow().date()
+    by_day: dict[str, dict[str, int]] = {}
+    for attempt in attempts:
+        if not attempt.created_at:
+            continue
+        day = attempt.created_at.date().isoformat()
+        bucket = by_day.setdefault(day, {"attempts": 0, "correct": 0})
+        bucket["attempts"] += 1
+        if attempt.is_correct:
+            bucket["correct"] += 1
+
+    items = []
+    for offset in range(days - 1, -1, -1):
+        day = (today - timedelta(days=offset)).isoformat()
+        bucket = by_day.get(day, {"attempts": 0, "correct": 0})
+        items.append(
+            {
+                "date": day,
+                "attempts": bucket["attempts"],
+                "correct": bucket["correct"],
+                "rate": round(bucket["correct"] * 100 / bucket["attempts"]) if bucket["attempts"] else 0,
+            }
+        )
+
+    def summarize(rows: list[dict]) -> dict:
+        total = sum(row["attempts"] for row in rows)
+        correct = sum(row["correct"] for row in rows)
+        return {
+            "attempts": total,
+            "correct": correct,
+            "rate": round(correct * 100 / total) if total else 0,
+            "days": sum(1 for row in rows if row["attempts"]),
+        }
+
+    this_week = summarize(items[-7:])
+    last_week = summarize(items[:-7])
+    return {
+        "user_key": user_key,
+        "days": days,
+        "items": items,
+        "this_week": this_week,
+        "last_week": last_week,
+        "rate_delta": this_week["rate"] - last_week["rate"],
+        "attempt_delta": this_week["attempts"] - last_week["attempts"],
     }
 
 

@@ -16,6 +16,7 @@ import { api } from '@/api/client'
 import type {
   AnalyticsConcept,
   LearningPlan,
+  LearningTrend,
   PracticeAttemptRow,
   WrongBook,
 } from '@/api/client'
@@ -27,6 +28,7 @@ const plan = ref<LearningPlan | null>(null)
 const wrongbook = ref<WrongBook | null>(null)
 const attempts = ref<PracticeAttemptRow[]>([])
 const concepts = ref<AnalyticsConcept[]>([])
+const trend = ref<LearningTrend | null>(null)
 
 async function load() {
   const key = currentKey.value
@@ -46,6 +48,11 @@ async function load() {
     wrongbook.value = null
     attempts.value = []
     concepts.value = []
+  }
+  try {
+    trend.value = await api.get<LearningTrend>(`/learning/trend?user_key=${key}&days=14`)
+  } catch {
+    trend.value = null
   }
 }
 
@@ -149,6 +156,44 @@ const summaryText = computed(() => {
   const weak = weakPoints.value.map((w) => `${w.label}（${w.rate}%）`).join('、')
   const head = `近 ${rangeDays.value} 天完成 ${scoped.value.length} 题，正确率 ${scopedRate.value}%；累计覆盖 ${plan.value?.summary.covered ?? 0}/${plan.value?.summary.total ?? 0} 个知识点。`
   return weak ? `${head} 当前最该补的是 ${weak}。` : `${head} 没有明显薄弱点，可以往没练过的概念推进。`
+})
+
+// 14 天正确率折线（SVG 手绘：只有这一天有作答才落点）
+const CHART_W = 320
+const CHART_H = 96
+const trendChart = computed(() => {
+  const items = trend.value?.items ?? []
+  const padX = 10
+  const padTop = 12
+  const padBottom = 18
+  const stepX = (CHART_W - padX * 2) / Math.max(items.length - 1, 1)
+  const yFor = (rate: number) => padTop + (CHART_H - padTop - padBottom) * (1 - rate / 100)
+  const dots = items.map((item, index) => ({
+    x: padX + index * stepX,
+    y: yFor(item.rate),
+    rate: item.rate,
+    attempts: item.attempts,
+  }))
+  const active = dots.filter((dot) => dot.attempts > 0)
+  if (!active.length) return { line: '', area: '', dots: [] as typeof dots }
+  const line = active.map((dot) => `${dot.x.toFixed(1)},${dot.y.toFixed(1)}`).join(' ')
+  const area =
+    `M ${active[0].x.toFixed(1)} ${CHART_H - padBottom} ` +
+    active.map((dot) => `L ${dot.x.toFixed(1)} ${dot.y.toFixed(1)}`).join(' ') +
+    ` L ${active[active.length - 1].x.toFixed(1)} ${CHART_H - padBottom} Z`
+  return { line, area, dots: active }
+})
+
+const hasTrendData = computed(() => (trend.value?.items ?? []).some((item) => item.attempts > 0))
+const deltaLabel = computed(() => {
+  if (!trend.value) return ''
+  const delta = trend.value.rate_delta
+  if (!delta) return '与上周持平'
+  return delta > 0 ? `↑ ${delta} pt` : `↓ ${Math.abs(delta)} pt`
+})
+const deltaTone = computed(() => {
+  const delta = trend.value?.rate_delta ?? 0
+  return delta > 0 ? 'text-success' : delta < 0 ? 'text-warn' : 'text-muted'
 })
 
 const firstWeak = computed(() => weakPoints.value[0] ?? null)
@@ -302,6 +347,67 @@ function retry(conceptId: string | null) {
                     />
                   </div>
                 </div>
+              </div>
+            </template>
+          </div>
+        </section>
+
+        <section class="surface overflow-hidden">
+          <header class="flex items-center justify-between border-b border-line px-5 py-3.5">
+            <div class="flex items-center gap-2">
+              <TrendingUp :size="14" class="text-muted" />
+              <h2 class="text-[12.5px] font-medium">正确率趋势 · 本周 vs 上周</h2>
+            </div>
+            <span class="text-[9.5px] text-muted">近 14 天</span>
+          </header>
+          <div class="px-5 pb-4 pt-4">
+            <div v-if="!hasTrendData" class="py-6 text-center text-[11px] text-muted">
+              最近 14 天还没有作答记录，练几题后这里会出现趋势线。
+            </div>
+            <template v-else>
+              <div class="flex items-end justify-between">
+                <div>
+                  <div class="flex items-baseline gap-1.5">
+                    <span class="text-[24px] font-semibold leading-none tracking-[-0.02em]">
+                      {{ trend?.this_week.rate ?? 0 }}%
+                    </span>
+                    <span class="text-[9.5px]" :class="deltaTone">{{ deltaLabel }}</span>
+                  </div>
+                  <p class="mt-1.5 text-[9.5px] text-muted">
+                    本周 {{ trend?.this_week.attempts ?? 0 }} 题 ·
+                    {{ trend?.this_week.days ?? 0 }} 天有练习
+                  </p>
+                </div>
+                <p class="text-right text-[9.5px] text-muted">
+                  上周 {{ trend?.last_week.rate ?? 0 }}% · {{ trend?.last_week.attempts ?? 0 }} 题
+                </p>
+              </div>
+              <svg viewBox="0 0 320 96" preserveAspectRatio="none" class="mt-2 h-[96px] w-full">
+                <path :d="trendChart.area" fill="rgba(37, 99, 235, 0.09)" />
+                <polyline
+                  :points="trendChart.line"
+                  fill="none"
+                  stroke="#2563EB"
+                  stroke-width="1.6"
+                  stroke-linejoin="round"
+                  vector-effect="non-scaling-stroke"
+                />
+                <line
+                  v-for="(dot, i) in trendChart.dots"
+                  :key="i"
+                  :x1="dot.x"
+                  :x2="dot.x"
+                  :y1="dot.y - 2.5"
+                  :y2="dot.y + 2.5"
+                  stroke="#2563EB"
+                  stroke-width="1.4"
+                  vector-effect="non-scaling-stroke"
+                />
+              </svg>
+              <div class="flex items-center justify-between text-[8.5px] text-muted">
+                <span>14 天前</span>
+                <span>只有当天有作答才落点</span>
+                <span>今天</span>
               </div>
             </template>
           </div>

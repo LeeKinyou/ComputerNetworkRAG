@@ -42,6 +42,39 @@ export interface AnalyticsConcept {
   state: 'no_data' | 'weak' | 'normal' | 'mastered'
 }
 
+export interface AnalyticsStudent {
+  user_key: string
+  attempts: number
+  correct: number
+  rate: number
+  questions: number
+  last_at: string | null
+}
+
+export interface TrendDay {
+  date: string
+  attempts: number
+  correct: number
+  rate: number
+}
+
+export interface TrendWindow {
+  attempts: number
+  correct: number
+  rate: number
+  days: number
+}
+
+export interface LearningTrend {
+  user_key: string
+  days: number
+  items: TrendDay[]
+  this_week: TrendWindow
+  last_week: TrendWindow
+  rate_delta: number
+  attempt_delta: number
+}
+
 export interface PracticeOption {
   key: string
   text: string
@@ -280,6 +313,8 @@ export interface Evidence {
   excerpt: string
   channels: string[]
   score: number
+  /** 追问时沿用上一轮引用，本轮检索未再次命中的切片 */
+  carried_over?: boolean
 }
 
 export interface Card {

@@ -254,3 +254,78 @@ async def test_questions_can_be_scoped_to_given_ids(api):
     # 不存在的 id 会被库里过滤掉，只剩真实题目
     response = await client.get("/api/v2/questions", params={"question_ids": "q_arp,missing", "limit": 3})
     assert [item["id"] for item in response.json()["items"]] == ["q_arp"]
+
+
+async def test_analytics_students_aggregates_per_user(api):
+    client, factory = api
+    await seed_course(factory)
+    now = utcnow()
+    async with factory() as session:
+        session.add_all(
+            [
+                # demo：同一题做两次（题数去重后 1），一对一错
+                Attempt(id="s1", course_id=COURSE_ID, question_id="q_arp", user_key="demo_user",
+                        chapter_id="ch2", answer="A", is_correct=True, created_at=now - timedelta(hours=1)),
+                Attempt(id="s2", course_id=COURSE_ID, question_id="q_arp", user_key="demo_user",
+                        chapter_id="ch2", answer="A", is_correct=False, created_at=now - timedelta(hours=2)),
+                # lin：三题全错
+                Attempt(id="s3", course_id=COURSE_ID, question_id="q_tcp", user_key="stu_lin",
+                        chapter_id="ch2", answer="A", is_correct=False, created_at=now - timedelta(hours=3)),
+                Attempt(id="s4", course_id=COURSE_ID, question_id="q_dns", user_key="stu_lin",
+                        chapter_id="ch1", answer="A", is_correct=False, created_at=now - timedelta(hours=4)),
+                Attempt(id="s5", course_id=COURSE_ID, question_id="q_arp", user_key="stu_lin",
+                        chapter_id="ch2", answer="A", is_correct=False, created_at=now - timedelta(hours=5)),
+            ]
+        )
+        await session.commit()
+
+    response = await client.get("/api/v2/analytics/students", params={"course_id": COURSE_ID})
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["total"] == 2
+    assert [item["user_key"] for item in data["items"]] == ["stu_lin", "demo_user"]
+    assert data["items"][0]["attempts"] == 3
+    assert data["items"][0]["rate"] == 0
+    assert data["items"][0]["questions"] == 3
+    assert data["items"][1]["attempts"] == 2
+    assert data["items"][1]["rate"] == 50
+    assert data["items"][1]["questions"] == 1
+
+
+async def test_learning_trend_splits_this_week_and_last_week(api):
+    client, factory = api
+    await seed_course(factory)
+    now = utcnow()
+    async with factory() as session:
+        session.add_all(
+            [
+                # 本周（近 7 天）：一对一错 → 50%
+                Attempt(id="t1", course_id=COURSE_ID, question_id="q_arp", user_key="demo_user",
+                        chapter_id="ch2", answer="A", is_correct=True, created_at=now - timedelta(days=2)),
+                Attempt(id="t2", course_id=COURSE_ID, question_id="q_tcp", user_key="demo_user",
+                        chapter_id="ch2", answer="A", is_correct=False, created_at=now - timedelta(days=3)),
+                # 上周（7~13 天前）：两题全对 → 100%
+                Attempt(id="t3", course_id=COURSE_ID, question_id="q_dns", user_key="demo_user",
+                        chapter_id="ch1", answer="A", is_correct=True, created_at=now - timedelta(days=8)),
+                Attempt(id="t4", course_id=COURSE_ID, question_id="q_arp", user_key="demo_user",
+                        chapter_id="ch2", answer="A", is_correct=True, created_at=now - timedelta(days=11)),
+                # 超出 14 天窗口，不应计入
+                Attempt(id="t5", course_id=COURSE_ID, question_id="q_tcp", user_key="demo_user",
+                        chapter_id="ch2", answer="A", is_correct=True, created_at=now - timedelta(days=20)),
+            ]
+        )
+        await session.commit()
+
+    response = await client.get(
+        "/api/v2/learning/trend", params={"user_key": "demo_user", "course_id": COURSE_ID, "days": 14}
+    )
+    assert response.status_code == 200
+    data = response.json()
+
+    assert len(data["items"]) == 14
+    assert data["this_week"] == {"attempts": 2, "correct": 1, "rate": 50, "days": 2}
+    assert data["last_week"] == {"attempts": 2, "correct": 2, "rate": 100, "days": 2}
+    assert data["rate_delta"] == -50
+    assert data["attempt_delta"] == 0
+    assert data["items"][-1]["date"] == now.date().isoformat()
