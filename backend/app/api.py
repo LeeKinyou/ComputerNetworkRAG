@@ -1385,10 +1385,10 @@ async def learning_next(
 
     def reason_for(item: dict) -> str:
         if item["state"] == "weak":
-            return f"近期正确率 {item['rate']}%，先把这里补起来"
+            return f"正确率 {item['rate']}%"
         if item["state"] == "no_data":
-            return "还没练过，先做一组建立判断力"
-        return f"正确率 {item['rate']}%，再练两组就稳了"
+            return "还没练过"
+        return f"正确率 {item['rate']}%"
 
     order = {"weak": 0, "no_data": 1, "normal": 2}
     candidates = sorted(
@@ -1418,7 +1418,7 @@ async def learning_next(
         if source and source["state"] in ("weak", "no_data") and source["concept_id"] not in picked:
             if not push(
                 source,
-                f"它是「{item['title']}」的先修，先补这一步更省力",
+                f"「{item['title']}」的先修",
                 action="review" if source["state"] == "weak" else "learn",
             ):
                 break
