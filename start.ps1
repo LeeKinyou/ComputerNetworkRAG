@@ -41,12 +41,29 @@ if (Test-Service) {
 }
 
 Write-Step '检查运行环境'
-if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-    Write-Host '未找到 uv。请先安装后再运行：' -ForegroundColor Yellow
-    Write-Host '  powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"'
-    exit 1
+# 优先用仓库内 venv（Windows 本地已装好依赖），没有 venv 再回退 uv
+$venvPython = Join-Path $Backend '.venv\Scripts\python.exe'
+$useVenv = Test-Path $venvPython
+$useUv = $false
+if (-not $useVenv) {
+    if (Get-Command uv -ErrorAction SilentlyContinue) {
+        $useUv = $true
+        Write-Host ("uv: " + (uv --version))
+    } else {
+        Write-Host '未找到 backend\.venv，也没有 uv。二选一：' -ForegroundColor Yellow
+        Write-Host '  1) cd backend; python -m venv .venv; .\.venv\Scripts\python.exe -m pip install -e .'
+        Write-Host '  2) powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"'
+        exit 1
+    }
+} else {
+    & $venvPython -c "import fastapi, uvicorn" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host 'backend\.venv 缺少依赖，先安装：' -ForegroundColor Yellow
+        Write-Host "  cd `"$Backend`"; .\.venv\Scripts\python.exe -m pip install -e ."
+        exit 1
+    }
+    Write-Host "使用 backend\.venv：$venvPython"
 }
-Write-Host ("uv: " + (uv --version))
 
 $envFile = Join-Path $Root '.env'
 if (-not (Test-Path $envFile)) {
@@ -60,15 +77,20 @@ if ([string]::IsNullOrWhiteSpace($keyValue)) {
     Write-Host '提示：LLM_API_KEY 为空，问答会使用模板答案；填入后重启即可启用模型润色。' -ForegroundColor Yellow
 }
 
-Write-Step '同步后端依赖'
-Push-Location $Backend
-try {
-    uv sync --quiet
-    if ($LASTEXITCODE -ne 0) { throw 'uv sync 失败' }
-} finally {
-    Pop-Location
+if ($useUv) {
+    Write-Step '同步后端依赖'
+    Push-Location $Backend
+    try {
+        uv sync --quiet
+        if ($LASTEXITCODE -ne 0) { throw 'uv sync 失败' }
+    } finally {
+        Pop-Location
+    }
+    Write-Host '依赖已就绪。'
+} else {
+    Write-Step '跳过依赖同步'
+    Write-Host '沿用 backend\.venv 中已安装的依赖。'
 }
-Write-Host '依赖已就绪。'
 
 $staticIndex = Join-Path $Backend 'app\static\index.html'
 if (-not $SkipBuild) {
@@ -99,10 +121,17 @@ if (-not $SkipBuild) {
 }
 
 Write-Step '启动服务'
-$process = Start-Process -FilePath 'uv' `
-    -ArgumentList 'run', 'python', '-m', 'app.main' `
-    -WorkingDirectory $Backend `
-    -PassThru
+if ($useVenv) {
+    $process = Start-Process -FilePath $venvPython `
+        -ArgumentList '-m', 'app.main' `
+        -WorkingDirectory $Backend `
+        -PassThru
+} else {
+    $process = Start-Process -FilePath 'uv' `
+        -ArgumentList 'run', 'python', '-m', 'app.main' `
+        -WorkingDirectory $Backend `
+        -PassThru
+}
 
 $deadline = (Get-Date).AddSeconds(40)
 while ((Get-Date) -lt $deadline) {
@@ -111,8 +140,9 @@ while ((Get-Date) -lt $deadline) {
 }
 
 if (-not (Test-Service)) {
+    $manual = if ($useVenv) { ".\.venv\Scripts\python.exe -m app.main" } else { 'uv run python -m app.main' }
     Write-Host '服务未在 40 秒内就绪。请在启动窗口查看日志，或运行：' -ForegroundColor Red
-    Write-Host "  cd `"$Backend`"; uv run python -m app.main"
+    Write-Host "  cd `"$Backend`"; $manual"
     exit 1
 }
 
