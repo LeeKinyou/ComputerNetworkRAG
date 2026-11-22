@@ -36,6 +36,7 @@ export interface SourceRef {
   locator: string
   score: number
   text: string
+  carriedOver?: boolean
 }
 
 export interface PendingApproval {

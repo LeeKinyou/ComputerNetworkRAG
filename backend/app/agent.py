@@ -19,6 +19,7 @@ from typing import Any, TypedDict
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
+from sqlalchemy import select
 
 from app.config import settings
 from app.db import session_scope
@@ -48,6 +49,8 @@ class TutorState(TypedDict, total=False):
     answer: str
     status: str
     approval: str
+    # 同一会话里上一轮已完成运行的引用：追问时作为兜底上下文
+    previous: dict
 
 
 async def emit(run_id: str, event_type: str, payload: dict) -> int:
@@ -141,7 +144,27 @@ async def retrieve_node(state: TutorState) -> dict:
     evidence = retriever.search(
         state["question"], top_k=4, boost_chapters=boost_chapters or None
     )
+
+    # 追问兜底：本次检索没覆盖到的上一轮引用补进来（最多 2 条），
+    # 让「那它的缺点呢？」这类省略主语的追问也能带上原文。
+    previous = state.get("previous") or {}
+    carried = 0
+    if previous.get("citations"):
+        seen = {(item.get("document_id"), item.get("chunk_id")) for item in evidence}
+        for item in previous["citations"]:
+            key = (item.get("document_id"), item.get("chunk_id"))
+            if key in seen or not item.get("chunk_id"):
+                continue
+            seen.add(key)
+            evidence.append({**item, "carried_over": True})
+            carried += 1
+            if carried >= 2:
+                break
+
     elapsed = int((time.perf_counter() - started) * 1000)
+    summary = f"命中 {len(evidence)} 个课程片段"
+    if carried:
+        summary += f"（沿用上一轮引用 {carried} 条）"
     await emit(
         state["run_id"],
         "observation",
@@ -151,7 +174,8 @@ async def retrieve_node(state: TutorState) -> dict:
             "elapsed_ms": elapsed,
             "count": len(evidence),
             "profile_boost": sorted(boost_chapters),
-            "summary": f"命中 {len(evidence)} 个课程片段" if evidence else "没有命中课程片段",
+            "carried_over": carried,
+            "summary": summary if evidence else "没有命中课程片段",
         },
     )
     return {"evidence": evidence}
@@ -407,6 +431,29 @@ async def execute_run(run_id: str, resume: dict | None = None) -> None:
                 }
                 payload["profile"] = await build_profile(
                     session, run.user_key or "demo_user", run.course_id
+                )
+                # 追问上下文：同会话上一轮已完成的运行（引用 + 问题）
+                previous = (
+                    await session.execute(
+                        select(Run)
+                        .where(
+                            Run.session_id == run.session_id,
+                            Run.course_id == run.course_id,
+                            Run.id != run.id,
+                            Run.status == "completed",
+                        )
+                        .order_by(Run.created_at.desc())
+                        .limit(1)
+                    )
+                ).scalars().first()
+                payload["previous"] = (
+                    {
+                        "run_id": previous.id,
+                        "question": previous.question,
+                        "citations": (previous.citations or [])[:3],
+                    }
+                    if previous
+                    else {}
                 )
             await agent_graph.ainvoke(payload, config=config)
     except Exception as exc:  # noqa: BLE001 - 对外只暴露安全错误码

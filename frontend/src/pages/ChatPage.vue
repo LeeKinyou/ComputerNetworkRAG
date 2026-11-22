@@ -399,6 +399,7 @@ function toSource(item: Evidence): SourceRef {
     locator: locator || '课程原文',
     score: Number(item.score ?? 0),
     text: item.excerpt ?? '',
+    carriedOver: Boolean(item.carried_over),
   }
 }
 
@@ -977,7 +978,16 @@ function applyEvent(task: Task, type: string, payload: RunEventPayload) {
                 </span>
                 <span class="shrink-0 font-mono text-[9px] text-muted">{{ s.score.toFixed(2) }}</span>
               </div>
-              <p class="mt-0.5 text-[9px] text-muted">{{ s.locator }}</p>
+              <p class="mt-0.5 flex items-center gap-1.5 text-[9px] text-muted">
+                <span class="truncate">{{ s.locator }}</span>
+                <span
+                  v-if="s.carriedOver"
+                  class="shrink-0 rounded-full bg-brand/10 px-1.5 py-0.5 text-[8.5px] text-brand"
+                  title="本轮检索未再次命中，沿用上一轮回答的引用"
+                >
+                  沿用上一轮
+                </span>
+              </p>
               <p class="mt-1.5 line-clamp-3 text-[10px] leading-relaxed text-muted">{{ s.text }}</p>
               <div class="mt-1.5 h-1 overflow-hidden rounded-full bg-tint">
                 <div class="h-full rounded-full bg-brand/60" :style="{ width: s.score * 100 + '%' }" />
