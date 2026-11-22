@@ -156,7 +156,32 @@ function onGlobalKeydown(event: KeyboardEvent) {
   }
 }
 
-onMounted(() => window.addEventListener('keydown', onGlobalKeydown))
+// 左下角运行环境标识：按 /health 的真实后端显示，不写死 SQLite
+const dbBackend = ref('')
+const backendTitle = computed(() => {
+  if (dbBackend.value === 'postgresql') return 'PostgreSQL · 单进程'
+  if (dbBackend.value === 'sqlite') return 'SQLite · 单进程'
+  return '单进程 · 单端口'
+})
+const backendHint = computed(() => {
+  if (dbBackend.value === 'postgresql') return '远程数据库 + 本地索引，单端口部署'
+  if (dbBackend.value === 'sqlite') return 'SQLite + 本地索引，无需外部中间件'
+  return '数据库与索引同进程提供'
+})
+
+async function loadHealth() {
+  try {
+    const health = await api.get<{ db_backend?: string }>('/health')
+    dbBackend.value = health.db_backend ?? ''
+  } catch {
+    dbBackend.value = ''
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', onGlobalKeydown)
+  void loadHealth()
+})
 onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
 </script>
 
@@ -206,10 +231,10 @@ onUnmounted(() => window.removeEventListener('keydown', onGlobalKeydown))
         <div class="rounded-2xl border border-line bg-surface/70 p-3 backdrop-blur">
           <div class="flex items-center gap-1.5 text-[11px] font-medium text-subink">
             <span class="h-1.5 w-1.5 rounded-full bg-success" />
-            lite 模式 · 单进程
+            {{ backendTitle }}
           </div>
           <p class="mt-1.5 text-[11px] leading-relaxed text-muted">
-            SQLite + 本地索引，无需外部中间件
+            {{ backendHint }}
           </p>
         </div>
       </div>
