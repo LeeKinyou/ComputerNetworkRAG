@@ -19,7 +19,7 @@ from typing import Any, TypedDict
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.config import settings
 from app.db import session_scope
@@ -345,23 +345,42 @@ async def finalize_node(state: TutorState) -> dict:
         for index in range(0, len(answer), 24):
             await emit(run_id, "token", {"text": answer[index : index + 24]})
             await asyncio.sleep(0.02)
+    cancelled_by_user = False
     async with session_scope() as session:
         run = await session.get(Run, run_id)
         if run is None:
             return {}
-        run.answer_markdown = answer
-        run.cards = cards
-        run.citations = citations
-        run.status = status
-        run.pending_input = None
-        session.add(
-            Message(
-                id=new_id(),
-                session_id=run.session_id,
-                role="assistant",
-                content=answer,
+        session_id = run.session_id
+        # 条件更新：只有此刻仍未取消才写完成态，避免 cancel 与 finalize 并发时被覆盖
+        updated = await session.execute(
+            update(Run)
+            .where(Run.id == run_id, Run.status != "cancelled")
+            .values(
+                answer_markdown=answer,
+                cards=cards,
+                citations=citations,
+                status=status,
+                pending_input=None,
             )
         )
+        if not updated.rowcount:
+            cancelled_by_user = True
+        else:
+            session.add(
+                Message(
+                    id=new_id(),
+                    session_id=session_id,
+                    role="assistant",
+                    content=answer,
+                )
+            )
+    if cancelled_by_user:
+        await emit(
+            run_id,
+            "final",
+            {"status": "cancelled", "answer_markdown": "", "cards": [], "citations": []},
+        )
+        return {}
     await emit(
         run_id,
         "final",
