@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sqlalchemy import select  # noqa: E402
+from sqlalchemy import delete, select  # noqa: E402
 
 from app.db import SessionFactory, engine  # noqa: E402
 from app.models import Attempt, Question  # noqa: E402
@@ -36,13 +36,23 @@ PLAN: dict[str, list[tuple[int, int, int]]] = {
 }
 
 
+# 演示身份当前就有的错题：历史里的错误作答只从这批题里挑，
+# 否则会把从没错过的题也拉进错题本，破坏演示口径。
+WRONG_POOL = ["q_ch2_03", "q_ch6_03", "q_ch4_01", "q_ch2_02", "q_ch6_04"]
+
+
 def history_id(user_key: str, days_ago: int, index: int) -> str:
     return f"hist-{BATCH}-{user_key}-{days_ago}-{index}"[:36]
 
 
-async def main(dry_run: bool) -> None:
+async def main(dry_run: bool, reset: bool = False) -> None:
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     async with SessionFactory() as session:
+        if reset:
+            result = await session.execute(
+                delete(Attempt).where(Attempt.id.like(f"hist-{BATCH}-%"))
+            )
+            print(f"{'DRY-RUN ' if dry_run else ''}reset removed={result.rowcount}")
         questions = (
             await session.execute(
                 select(Question).where(Question.course_id == COURSE_ID).order_by(Question.sort_order, Question.id)
@@ -51,11 +61,18 @@ async def main(dry_run: bool) -> None:
         if not questions:
             raise SystemExit("题库为空，先跑 seed 再补历史")
 
+        wrong_questions = [item for item in questions if item.id in WRONG_POOL] or questions
+
         created = skipped = 0
         for user_key, days in PLAN.items():
             for days_ago, count, correct in days:
                 start = (days_ago * 7 + len(user_key)) % len(questions)
-                picked = [questions[(start + step) % len(questions)] for step in range(count)]
+                picked = []
+                for step in range(count):
+                    if step < correct:
+                        picked.append(questions[(start + step) % len(questions)])
+                    else:
+                        picked.append(wrong_questions[(start + step) % len(wrong_questions)])
                 created_at = now - timedelta(days=days_ago)
                 for index, question in enumerate(picked):
                     attempt_id = history_id(user_key, days_ago, index)
@@ -90,5 +107,6 @@ if __name__ == "__main__":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--reset", action="store_true", help="先删掉本期（hist-w13）历史再重写")
     args = parser.parse_args()
-    asyncio.run(main(args.dry_run))
+    asyncio.run(main(args.dry_run, args.reset))
