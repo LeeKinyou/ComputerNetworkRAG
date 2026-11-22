@@ -63,7 +63,7 @@ async function submit() {
         >
           <Sparkles :size="16" />
         </div>
-        <span class="text-[14px] font-semibold tracking-tight">重邮计网教学系统</span>
+        <span class="text-[14px] font-semibold tracking-tight">智网系统</span>
       </div>
 
       <form

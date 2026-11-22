@@ -71,7 +71,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(
-    title="重邮计网教学系统",
+    title="智网系统",
     version="0.1.0",
     lifespan=lifespan,
     docs_url="/api/docs",

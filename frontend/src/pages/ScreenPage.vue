@@ -53,7 +53,7 @@ const elapsed = computed(() => task.steps.slice(0, Math.min(stepIndex.value, tas
           <Sparkles :size="17" />
         </div>
         <div>
-          <div class="text-[14px] font-semibold tracking-tight">重邮计网教学系统</div>
+          <div class="text-[14px] font-semibold tracking-tight">智网系统</div>
           <div class="mt-0.5 text-[10px] text-muted">一次任务正在发生</div>
         </div>
         <span class="ml-3 flex items-center gap-1.5 rounded-full bg-success/12 px-2.5 py-1 text-[10px] text-success">
