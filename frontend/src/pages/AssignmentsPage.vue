@@ -39,6 +39,11 @@ const errorMsg = ref('')
 const dialogOpen = ref(false)
 const importing = ref(false)
 const dialogError = ref('')
+const notice = ref('')
+const mode = ref<'single' | 'markdown'>('single')
+const chapters = ref<{ id: string; title: string }[]>([])
+const singleForm = ref({ due: '', chapter_id: '' })
+const singleItems = ref([{ type: 'short', stem: '', reference: '', rubricText: '', score: 10 }])
 const TEMPLATE = `# 新作业
 
 ### 题目 1 | 简答 | 10 分
@@ -212,7 +217,12 @@ async function saveItem(itemId: string) {
 function openDialog() {
   dialogOpen.value = true
   dialogError.value = ''
+  notice.value = ''
+  mode.value = 'single'
+  singleForm.value = { due: '', chapter_id: '' }
+  singleItems.value = [{ type: 'short', stem: '', reference: '', rubricText: '', score: 10 }]
   form.value = { title: '', due: '', content: TEMPLATE }
+  void loadChapters()
 }
 
 async function submitImport() {
@@ -228,15 +238,130 @@ async function submitImport() {
     const data = new FormData()
     data.append('file', file)
     if (form.value.title.trim()) data.append('title', form.value.title.trim())
-    if (form.value.due) data.append('due_at', form.value.due)
-    const created = await api.upload<{ id: string }>('/assignments/import', data)
+    if (singleForm.value.due) data.append('due_at', new Date(singleForm.value.due).toISOString())
+    if (singleForm.value.chapter_id) data.append('chapter_id', singleForm.value.chapter_id)
+    const created = await api.upload<{ id: string; warnings?: string[] }>('/assignments/import', data)
     dialogOpen.value = false
+    notice.value = created.warnings?.length ? created.warnings.join('；') : ''
     await loadRows()
     await open(created.id)
   } catch (exc) {
     dialogError.value = exc instanceof Error ? exc.message : '导入失败'
   } finally {
     importing.value = false
+  }
+}
+
+function parsePoints(text: string, score: number) {
+  const parts = text
+    .split(/[;；\n]/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+  if (!parts.length) return [{ text: '答出核心结论', score }]
+  const parsed = parts.map((part) => {
+    const match = part.match(/^(.+?)=([0-9]+)$/)
+    return match ? { text: match[1].trim(), score: Number(match[2]) } : { text: part, score: 0 }
+  })
+  const total = parsed.reduce((sum, point) => sum + point.score, 0)
+  if (!total) {
+    const even = Math.floor(score / parsed.length)
+    return parsed.map((point, index) => ({
+      ...point,
+      score: index === parsed.length - 1 ? score - even * (parsed.length - 1) : even,
+    }))
+  }
+  const scaled = parsed.map((point) => ({
+    ...point,
+    score: Math.max(0, Math.round((point.score * score) / total)),
+  }))
+  const diff = score - scaled.reduce((sum, point) => sum + point.score, 0)
+  scaled[scaled.length - 1].score = Math.max(0, scaled[scaled.length - 1].score + diff)
+  return scaled
+}
+
+function addSingleItem() {
+  singleItems.value.push({ type: 'short', stem: '', reference: '', rubricText: '', score: 10 })
+}
+
+function removeSingleItem(index: number) {
+  if (singleItems.value.length > 1) singleItems.value.splice(index, 1)
+}
+
+async function submitSingle() {
+  if (importing.value) return
+  const title = form.value.title.trim()
+  if (!title) {
+    dialogError.value = '先填作业标题'
+    return
+  }
+  const scoreOf = (value: number) => Number(value) || 10
+  const items = singleItems.value.map((row) => ({
+    type: row.type,
+    stem: row.stem.trim(),
+    reference: row.reference.trim(),
+    score: scoreOf(row.score),
+    rubric: parsePoints(row.rubricText, scoreOf(row.score)),
+  }))
+  if (items.some((item) => !item.stem)) {
+    dialogError.value = '每道题都要填题干'
+    return
+  }
+  importing.value = true
+  dialogError.value = ''
+  try {
+    const created = await api.post<{ id: string }>('/assignments', {
+      title,
+      chapter_id: singleForm.value.chapter_id || null,
+      due_at: singleForm.value.due ? new Date(singleForm.value.due).toISOString() : null,
+      status: 'published',
+      items,
+    })
+    dialogOpen.value = false
+    notice.value = ''
+    await loadRows()
+    await open(created.id)
+  } catch (exc) {
+    dialogError.value = exc instanceof Error ? exc.message : '创建失败'
+  } finally {
+    importing.value = false
+  }
+}
+
+async function toggleStatus() {
+  const current = detail.value
+  if (!current) return
+  try {
+    await api.patch(`/assignments/${current.id}`, {
+      status: current.status === 'closed' ? 'published' : 'closed',
+    })
+    await loadRows()
+    await open(current.id)
+  } catch (exc) {
+    errorMsg.value = exc instanceof Error ? exc.message : '更新状态失败'
+  }
+}
+
+async function removeAssignment() {
+  const current = detail.value
+  if (!current) return
+  if (!window.confirm(`删除《${current.title}》？提交与批改记录会一并删除。`)) return
+  try {
+    await api.del(`/assignments/${current.id}`)
+    detail.value = null
+    currentId.value = ''
+    await loadRows()
+    const next = rows.value[0]?.id
+    if (next) await open(next)
+  } catch (exc) {
+    errorMsg.value = exc instanceof Error ? exc.message : '删除失败'
+  }
+}
+
+async function loadChapters() {
+  try {
+    chapters.value = (await api.get<{ items: { id: string; title: string }[] }>('/courses/course_cn/chapters')).items
+  } catch {
+    chapters.value = []
   }
 }
 
@@ -281,6 +406,13 @@ onMounted(boot)
     </div>
 
     <p v-if="errorMsg" class="mt-3 text-[11.5px] text-danger">{{ errorMsg }}</p>
+    <p
+      v-if="notice"
+      class="mt-3 flex items-start justify-between gap-3 rounded-lg border border-warn/30 bg-warn/5 px-3 py-2 text-[11px] text-warn"
+    >
+      <span>{{ notice }}</span>
+      <button class="text-[10px] text-warn/70 hover:text-warn" @click="notice = ''">知道了</button>
+    </p>
 
     <div class="mt-5 grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
       <aside class="space-y-2">
@@ -329,13 +461,42 @@ onMounted(boot)
               {{ detail.item_count }} 题 · {{ detail.total_score }} 分 · 截止 {{ fmtDate(detail.due_at) || '未设' }}
             </p>
           </div>
-          <span
-            v-if="!teacher"
-            class="rounded-full px-2 py-1 text-[10.5px]"
-            :class="submission?.status === 'graded' ? 'bg-success/10 text-success' : 'bg-tint text-muted'"
-          >
-            {{ submission?.status === 'graded' ? `${submission.score}/${submission.max_score}` : '待提交' }}
-          </span>
+          <div class="flex flex-wrap items-center justify-end gap-2">
+            <span
+              v-if="teacher"
+              class="rounded-full px-2 py-1 text-[10.5px]"
+              :class="
+                detail.status === 'draft'
+                  ? 'bg-warn/10 text-warn'
+                  : detail.status === 'closed'
+                    ? 'bg-tint text-muted'
+                    : 'bg-success/10 text-success'
+              "
+            >
+              {{ detail.status === 'draft' ? '草稿' : detail.status === 'closed' ? '已关闭' : '已发布' }}
+            </span>
+            <template v-if="teacher">
+              <button
+                class="pill-btn h-7 border border-line bg-surface px-2.5 text-[10.5px] text-subink hover:border-line-strong hover:text-ink"
+                @click="toggleStatus"
+              >
+                {{ detail.status === 'closed' ? '重新发布' : '关闭提交' }}
+              </button>
+              <button
+                class="pill-btn h-7 border border-line bg-surface px-2.5 text-[10.5px] text-danger hover:border-danger/40"
+                @click="removeAssignment"
+              >
+                删除
+              </button>
+            </template>
+            <span
+              v-if="!teacher"
+              class="rounded-full px-2 py-1 text-[10.5px]"
+              :class="submission?.status === 'graded' ? 'bg-success/10 text-success' : 'bg-tint text-muted'"
+            >
+              {{ submission?.status === 'graded' ? `${submission.score}/${submission.max_score}` : '待提交' }}
+            </span>
+          </div>
         </div>
 
         <!-- 教师：题目与提交 -->
@@ -364,6 +525,7 @@ onMounted(boot)
               <h3 class="text-[12.5px] font-medium">提交 {{ roster.length }}</h3>
               <span v-if="detail.stats" class="text-[10px] text-muted">
                 已批 {{ detail.stats.graded }} · 待批 {{ detail.stats.ungraded }} · 平均 {{ detail.stats.avg_score ?? '—' }}
+                <span v-if="detail.stats.needs_review" class="text-warn">· {{ detail.stats.needs_review }} 题待复核</span>
               </span>
             </div>
             <div v-if="!roster.length" class="mt-2 text-[11px] text-muted">还没有学生提交。</div>
@@ -519,13 +681,13 @@ onMounted(boot)
       </section>
     </div>
 
-    <!-- 新建/导入 -->
+    <!-- 新建作业 -->
     <div
       v-if="dialogOpen"
       class="fixed inset-0 z-50 grid place-items-center bg-ink/25 px-6 py-10 backdrop-blur-sm"
       @click.self="dialogOpen = false"
     >
-      <div class="w-full max-w-[640px] rounded-2xl border border-line bg-surface p-5 shadow-2xl">
+      <div class="max-h-[92vh] w-full max-w-[720px] overflow-y-auto rounded-2xl border border-line bg-surface p-5 shadow-2xl">
         <div class="flex items-center justify-between">
           <h3 class="text-[15px] font-semibold">新建作业</h3>
           <button class="grid h-7 w-7 place-items-center rounded-full text-muted hover:bg-tint" @click="dialogOpen = false">
@@ -533,26 +695,102 @@ onMounted(boot)
           </button>
         </div>
 
-        <div class="mt-4 grid gap-3 sm:grid-cols-[1fr_180px]">
+        <div class="mt-4 flex gap-1 rounded-lg bg-tint p-1">
+          <button
+            class="flex-1 rounded-md px-3 py-1.5 text-[11.5px] transition"
+            :class="mode === 'single' ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink'"
+            @click="mode = 'single'"
+          >
+            逐题填写
+          </button>
+          <button
+            class="flex-1 rounded-md px-3 py-1.5 text-[11.5px] transition"
+            :class="mode === 'markdown' ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink'"
+            @click="mode = 'markdown'"
+          >
+            Markdown 粘贴
+          </button>
+        </div>
+
+        <div class="mt-3 grid gap-3 sm:grid-cols-[1fr_170px_150px]">
           <label class="flex flex-col gap-1 text-[10.5px] text-muted">
-            标题（留空用文件里的）
+            标题
             <input
               v-model="form.title"
               class="h-9 rounded-lg border border-line bg-surface px-3 text-[12px] text-ink outline-none focus:border-brand/60"
-              placeholder="第 4 周作业"
+              :placeholder="mode === 'single' ? '第 4 周作业' : '留空用文件里的'"
             />
           </label>
           <label class="flex flex-col gap-1 text-[10.5px] text-muted">
             截止
             <input
-              v-model="form.due"
+              v-model="singleForm.due"
               type="datetime-local"
               class="h-9 rounded-lg border border-line bg-surface px-3 text-[12px] text-ink outline-none focus:border-brand/60"
             />
           </label>
+          <label class="flex flex-col gap-1 text-[10.5px] text-muted">
+            章节
+            <select
+              v-model="singleForm.chapter_id"
+              class="h-9 rounded-lg border border-line bg-surface px-2 text-[12px] text-ink outline-none focus:border-brand/60"
+            >
+              <option value="">不挂章节</option>
+              <option v-for="chapter in chapters" :key="chapter.id" :value="chapter.id">{{ chapter.title }}</option>
+            </select>
+          </label>
         </div>
 
-        <label class="mt-3 flex flex-col gap-1 text-[10.5px] text-muted">
+        <template v-if="mode === 'single'">
+          <div class="mt-3 space-y-2.5">
+            <div v-for="(row, index) in singleItems" :key="index" class="rounded-xl border border-line p-3">
+              <div class="flex items-center justify-between">
+                <span class="text-[11px] text-muted">第 {{ index + 1 }} 题</span>
+                <div class="flex items-center gap-2">
+                  <select v-model="row.type" class="h-7 rounded-md border border-line bg-surface px-2 text-[11px] text-ink">
+                    <option value="short">简答</option>
+                    <option value="calc">计算</option>
+                  </select>
+                  <input
+                    v-model.number="row.score"
+                    type="number"
+                    min="1"
+                    max="100"
+                    class="h-7 w-14 rounded-md border border-line bg-surface px-2 text-[11px]"
+                  />
+                  <span class="text-[10px] text-muted">分</span>
+                  <button
+                    v-if="singleItems.length > 1"
+                    class="text-[10.5px] text-muted hover:text-danger"
+                    @click="removeSingleItem(index)"
+                  >
+                    删除
+                  </button>
+                </div>
+              </div>
+              <textarea
+                v-model="row.stem"
+                rows="2"
+                placeholder="题干"
+                class="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2 text-[12px] leading-relaxed outline-none focus:border-brand/60"
+              />
+              <textarea
+                v-model="row.reference"
+                rows="2"
+                placeholder="参考答案"
+                class="mt-1.5 w-full rounded-lg border border-line bg-surface px-3 py-2 text-[11.5px] leading-relaxed outline-none focus:border-brand/60"
+              />
+              <input
+                v-model="row.rubricText"
+                placeholder="评分要点，用 ; 分隔并标分值，如 确认接收通道=4; 同步序号=3"
+                class="mt-1.5 h-8 w-full rounded-lg border border-line bg-surface px-3 text-[11px] outline-none focus:border-brand/60"
+              />
+            </div>
+          </div>
+          <button class="mt-2 text-[11px] text-brand hover:underline" @click="addSingleItem">+ 加一题</button>
+        </template>
+
+        <label v-else class="mt-3 flex flex-col gap-1 text-[10.5px] text-muted">
           题目（Markdown）
           <textarea
             v-model="form.content"
@@ -566,15 +804,15 @@ onMounted(boot)
         <div class="mt-4 flex items-center justify-between">
           <span class="flex items-center gap-1 text-[10px] text-muted">
             <FileUp :size="11" />
-            解析后可直接发布
+            {{ mode === 'single' ? '要点分值会自动对齐题分' : '解析后可直接发布' }}
           </span>
           <button
             class="flex h-9 items-center gap-1.5 rounded-lg bg-brand px-4 text-[12px] font-medium text-white transition hover:bg-[#2251d6] disabled:opacity-60"
             :disabled="importing"
-            @click="submitImport"
+            @click="mode === 'single' ? submitSingle() : submitImport()"
           >
             <LoaderCircle v-if="importing" :size="13" class="animate-spin" />
-            {{ importing ? '导入中' : '导入并发布' }}
+            {{ importing ? '创建中' : '创建并发布' }}
           </button>
         </div>
       </div>

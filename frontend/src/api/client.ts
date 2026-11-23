@@ -474,7 +474,7 @@ export interface AssignmentDetail {
   item_count: number
   items: AssignmentItemDto[]
   my_submission?: SubmissionDto | null
-  stats?: { submitted: number; graded: number; ungraded: number; avg_score: number | null }
+  stats?: { submitted: number; graded: number; ungraded: number; needs_review: number; avg_score: number | null }
 }
 
 export interface GradedPoint {
