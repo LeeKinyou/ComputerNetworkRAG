@@ -1675,13 +1675,23 @@ class AssignmentCreate(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     description: str = Field(default="", max_length=4000)
     chapter_id: str | None = Field(default=None, max_length=36)
-    due_at: datetime | None = None
+    due_at: str | None = None
     status: str = "published"
     items: list[AssignmentItemIn]
 
 
 class SubmissionCreate(BaseModel):
     items: list[dict] = Field(default_factory=list)
+
+
+class AssignmentPatch(BaseModel):
+    """只改元信息；题目项不在此处改，避免已批提交与题目对不上。"""
+
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=4000)
+    chapter_id: str | None = Field(default=None, max_length=36)
+    due_at: str | None = None
+    status: str | None = None
 
 
 class SubmissionItemPatch(BaseModel):
@@ -1708,7 +1718,8 @@ def _parse_due(value: str | None) -> datetime | None:
     except ValueError as exc:
         raise _fail(400, "INVALID_DUE_AT", "截止时间格式应为 ISO 8601") from exc
     if parsed.tzinfo is None:
-        return parsed
+        # 前端 datetime-local 没有时区，语义是教师本地时间
+        parsed = parsed.replace(tzinfo=datetime.now(UTC).astimezone().tzinfo)
     return parsed.astimezone(UTC).replace(tzinfo=None)
 
 
@@ -1985,6 +1996,9 @@ async def list_assignments(
     rows: list[dict] = []
     pending = 0
     for assignment in assignments:
+        if not teacher and assignment.status == "draft":
+            # 草稿只对教师可见
+            continue
         row = {
             "id": assignment.id,
             "title": assignment.title,
@@ -2037,7 +2051,7 @@ async def create_assignment(
         title=payload.title,
         description=payload.description,
         chapter_id=payload.chapter_id,
-        due_at=payload.due_at,
+        due_at=_parse_due(payload.due_at),
         status=payload.status,
         items=items,
         created_by=account.user_key if account else "teacher",
@@ -2053,6 +2067,7 @@ async def import_assignment(
     file: UploadFile = File(...),
     title: str | None = Form(default=None),
     due_at: str | None = Form(default=None),
+    chapter_id: str | None = Form(default=None),
     status: str = Form(default="published"),
 ) -> dict:
     _require_teacher_request(request)
@@ -2078,7 +2093,7 @@ async def import_assignment(
         session,
         title=(title or parsed["title"]),
         description="",
-        chapter_id=None,
+        chapter_id=chapter_id or None,
         due_at=_parse_due(due_at),
         status=status,
         items=validated,
@@ -2104,6 +2119,8 @@ async def get_assignment(
 ) -> dict:
     teacher = _is_teacher(request)
     assignment, items = await _load_assignment(session, assignment_id)
+    if not teacher and assignment.status == "draft":
+        raise _fail(404, "ASSIGNMENT_NOT_FOUND", "作业不存在或未发布")
     payload = {
         "id": assignment.id,
         "title": assignment.title,
@@ -2120,10 +2137,23 @@ async def get_assignment(
             await session.execute(select(Submission).where(Submission.assignment_id == assignment.id))
         ).scalars().all()
         graded = [sub for sub in subs if sub.status == "graded"]
+        review = 0
+        if subs:
+            review = int(
+                (
+                    await session.execute(
+                        select(func.count(SubmissionItem.id)).where(
+                            SubmissionItem.submission_id.in_([sub.id for sub in subs]),
+                            SubmissionItem.needs_review.is_(True),
+                        )
+                    )
+                ).scalar_one()
+            )
         payload["stats"] = {
             "submitted": len(subs),
             "graded": len(graded),
             "ungraded": len(subs) - len(graded),
+            "needs_review": review,
             "avg_score": round(sum(sub.score for sub in graded) / len(graded)) if graded else None,
         }
     else:
@@ -2138,6 +2168,61 @@ async def get_assignment(
     return payload
 
 
+@router.patch("/assignments/{assignment_id}")
+async def update_assignment(
+    assignment_id: str,
+    payload: AssignmentPatch,
+    session: SessionDep,
+    request: Request,
+) -> dict:
+    """改标题/截止/章节/状态；题目项不在此处改，避免已批提交与题目对不上。"""
+    _require_teacher_request(request)
+    assignment, items = await _load_assignment(session, assignment_id)
+    if payload.status is not None:
+        if payload.status not in {"draft", "published", "closed"}:
+            raise _fail(400, "INVALID_STATUS", "作业状态只能是 draft / published / closed")
+        assignment.status = payload.status
+    if payload.title is not None:
+        assignment.title = payload.title.strip()
+    if payload.description is not None:
+        assignment.description = payload.description.strip()
+    if payload.chapter_id is not None:
+        assignment.chapter_id = payload.chapter_id or None
+    if payload.due_at is not None:
+        assignment.due_at = _parse_due(payload.due_at)
+    await session.commit()
+    return {
+        "id": assignment.id,
+        "title": assignment.title,
+        "status": assignment.status,
+        "chapter_id": assignment.chapter_id,
+        "due_at": iso(assignment.due_at),
+        "item_count": len(items),
+        "total_score": assignment.total_score,
+    }
+
+
+@router.delete("/assignments/{assignment_id}", status_code=204)
+async def delete_assignment(
+    assignment_id: str,
+    session: SessionDep,
+    request: Request,
+) -> None:
+    _require_teacher_request(request)
+    assignment, _ = await _load_assignment(session, assignment_id)
+    submission_ids = (
+        await session.execute(select(Submission.id).where(Submission.assignment_id == assignment.id))
+    ).scalars().all()
+    if submission_ids:
+        await session.execute(
+            delete(SubmissionItem).where(SubmissionItem.submission_id.in_(submission_ids))
+        )
+        await session.execute(delete(Submission).where(Submission.id.in_(submission_ids)))
+    await session.execute(delete(AssignmentItem).where(AssignmentItem.assignment_id == assignment.id))
+    await session.execute(delete(Assignment).where(Assignment.id == assignment.id))
+    await session.commit()
+
+
 @router.post("/assignments/{assignment_id}/submissions", status_code=201)
 async def submit_assignment(
     assignment_id: str,
@@ -2149,6 +2234,8 @@ async def submit_assignment(
     assignment, items = await _load_assignment(session, assignment_id)
     if assignment.status == "closed":
         raise _fail(400, "ASSIGNMENT_CLOSED", "作业已关闭，不能再提交")
+    if assignment.status == "draft":
+        raise _fail(400, "ASSIGNMENT_NOT_PUBLISHED", "作业还未发布")
 
     answers = {
         str(entry.get("item_id")): str(entry.get("answer") or "")[:4000]

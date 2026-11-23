@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -287,3 +287,91 @@ async def test_assignments_pending_and_learning_path(no_llm, auth_on):
         assert first["action"] == "submit"
         assert "截止" in first["reason"] or "逾期" in first["reason"]
         assert body["stages"][0]["goal"].startswith("先把")
+
+
+async def test_status_patch_and_delete(no_llm, auth_on):
+    async with api_harness() as (client, factory):
+        await seed_course(factory)
+        await login(client, "teacher", "teach-pass")
+        created = await create_assignment(client)
+
+        await login(client, "demo_user", "demo-pass")
+        detail = (await client.get(f"/api/v2/assignments/{created['id']}")).json()
+        item_id = detail["items"][0]["id"]
+        await client.post(
+            f"/api/v2/assignments/{created['id']}/submissions",
+            json={"items": [{"item_id": item_id, "answer": "只知道一点"}]},
+        )
+
+        await login(client, "teacher", "teach-pass")
+        closed = await client.patch(f"/api/v2/assignments/{created['id']}", json={"status": "closed"})
+        assert closed.status_code == 200
+        assert closed.json()["status"] == "closed"
+
+        renamed = await client.patch(
+            f"/api/v2/assignments/{created['id']}", json={"title": "改过名的作业"}
+        )
+        assert renamed.json()["title"] == "改过名的作业"
+
+        await login(client, "demo_user", "demo-pass")
+        denied = await client.post(
+            f"/api/v2/assignments/{created['id']}/submissions", json={"items": []}
+        )
+        assert denied.status_code == 400
+        assert denied.json()["error"]["code"] == "ASSIGNMENT_CLOSED"
+
+        await login(client, "teacher", "teach-pass")
+        deleted = await client.delete(f"/api/v2/assignments/{created['id']}")
+        assert deleted.status_code == 204
+        assert (await client.get(f"/api/v2/assignments/{created['id']}")).status_code == 404
+        listing = (await client.get("/api/v2/assignments")).json()
+        assert all(row["id"] != created["id"] for row in listing["items"])
+
+
+async def test_draft_is_hidden_from_students(no_llm, auth_on):
+    async with api_harness() as (client, factory):
+        await seed_course(factory)
+        await login(client, "teacher", "teach-pass")
+        created = await create_assignment(client, status="draft")
+
+        await login(client, "demo_user", "demo-pass")
+        listing = (await client.get("/api/v2/assignments")).json()
+        assert all(row["id"] != created["id"] for row in listing["items"])
+
+        assert (await client.get(f"/api/v2/assignments/{created['id']}")).status_code == 404
+        submit = await client.post(
+            f"/api/v2/assignments/{created['id']}/submissions", json={"items": []}
+        )
+        assert submit.status_code == 400
+        assert submit.json()["error"]["code"] == "ASSIGNMENT_NOT_PUBLISHED"
+
+        await login(client, "teacher", "teach-pass")
+        assert (await client.get(f"/api/v2/assignments/{created['id']}")).status_code == 200
+
+
+async def test_naive_due_at_is_teacher_local_time(no_llm):
+    async with api_harness() as (client, factory):
+        await seed_course(factory)
+        response = await client.post(
+            "/api/v2/assignments",
+            json={"title": "本地时间作业", "due_at": "2026-11-29T23:59", "items": ITEMS},
+        )
+        assert response.status_code == 201
+        detail = (await client.get(f"/api/v2/assignments/{response.json()['id']}")).json()
+        local = datetime.fromisoformat(detail["due_at"]).astimezone()
+        assert (local.hour, local.minute) == (23, 59)
+
+
+async def test_detail_stats_counts_needs_review(no_llm):
+    async with api_harness() as (client, factory):
+        await seed_course(factory)
+        created = await create_assignment(client)
+        detail = (await client.get(f"/api/v2/assignments/{created['id']}")).json()
+        item_ids = [item["id"] for item in detail["items"]]
+        await client.post(
+            f"/api/v2/assignments/{created['id']}/submissions",
+            json={"items": [{"item_id": item_ids[0], "answer": "只答了一半"}]},
+        )
+        graded = (await client.get(f"/api/v2/assignments/{created['id']}")).json()
+        assert graded["stats"]["needs_review"] >= 1
+
