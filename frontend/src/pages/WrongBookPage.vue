@@ -48,7 +48,7 @@ watch(currentKey, load)
 </script>
 
 <template>
-  <div class="animate-fade-up px-9 py-8">
+  <div class="animate-fade-up page">
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
         <h1 class="text-[26px] font-semibold leading-tight tracking-[-0.025em]">错题本</h1>
@@ -63,18 +63,18 @@ watch(currentKey, load)
       </RouterLink>
     </div>
 
-    <div class="mt-6 grid grid-cols-3 gap-3">
+    <div class="mt-4 grid grid-cols-3 gap-2 sm:mt-6 sm:gap-3">
       <section
         v-for="item in summary"
         :key="item.label"
-        class="rounded-2xl border border-line bg-surface px-5 py-4"
+        class="h-full rounded-2xl border border-line bg-surface px-3 py-3 sm:px-5 sm:py-4"
       >
-        <p class="text-[10.5px] text-muted">{{ item.label }}</p>
-        <p class="mt-1 flex items-baseline gap-1.5">
-          <span class="text-[26px] font-semibold leading-none tracking-tight" :class="item.tone">{{ item.value }}</span>
-          <span class="text-[10.5px] text-muted">题</span>
+        <p class="text-[9.5px] text-muted sm:text-[10.5px]">{{ item.label }}</p>
+        <p class="mt-1 flex items-baseline gap-1">
+          <span class="text-[19px] font-semibold leading-none tracking-tight sm:text-[26px]" :class="item.tone">{{ item.value }}</span>
+          <span class="text-[9px] text-muted sm:text-[10.5px]">题</span>
         </p>
-        <p class="mt-1.5 text-[10px] text-muted">{{ item.hint }}</p>
+        <p class="mt-1 line-clamp-2 text-[9px] leading-snug text-muted sm:mt-1.5 sm:text-[10px]">{{ item.hint }}</p>
       </section>
     </div>
 
@@ -99,11 +99,11 @@ watch(currentKey, load)
       </button>
     </div>
 
-    <div v-else class="mt-6 space-y-3">
+    <div v-else class="mt-5 space-y-3 sm:mt-6">
       <section
         v-for="group in data.groups"
         :key="group.concept_id ?? group.title"
-        class="rounded-2xl border border-line bg-surface p-5"
+        class="rounded-2xl border border-line bg-surface p-4 sm:p-5"
       >
         <div class="flex items-start justify-between gap-3">
           <div class="flex items-center gap-2.5">
@@ -121,14 +121,14 @@ watch(currentKey, load)
         </div>
 
         <ul class="mt-3 divide-y divide-line">
-          <li v-for="item in group.items" :key="item.question_id" class="flex items-start gap-4 py-3">
+          <li v-for="item in group.items" :key="item.question_id" class="flex flex-wrap items-start gap-3 py-3 sm:gap-4">
             <div class="min-w-0 flex-1">
               <p class="line-clamp-2 text-[12.5px] leading-relaxed text-subink">{{ item.stem }}</p>
               <p class="mt-1 text-[10px] text-muted">
                 错 {{ item.wrong }} 次 · 共作答 {{ item.attempts }} 次 · {{ item.chapter_title }}
               </p>
             </div>
-            <div class="flex shrink-0 items-center gap-1.5">
+            <div class="flex w-full shrink-0 items-center justify-end gap-1.5 sm:w-auto">
               <button
                 class="pill-btn h-7 border border-line bg-surface px-2.5 text-[10.5px] text-subink hover:border-line-strong hover:text-ink"
                 @click="retry(item.concept_id)"

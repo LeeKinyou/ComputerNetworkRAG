@@ -54,7 +54,7 @@ watch(currentKey, load)
 </script>
 
 <template>
-  <div class="animate-fade-up px-9 py-8">
+  <div class="animate-fade-up page">
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
         <h1 class="text-[26px] font-semibold leading-tight tracking-[-0.025em]">学习计划</h1>
@@ -69,24 +69,24 @@ watch(currentKey, load)
       </button>
     </div>
 
-    <div class="mt-6 grid grid-cols-3 gap-3">
+    <div class="mt-4 grid grid-cols-3 gap-2 sm:mt-6 sm:gap-3">
       <section
         v-for="item in summary"
         :key="item.label"
-        class="rounded-2xl border border-line bg-surface px-5 py-4"
+        class="h-full rounded-2xl border border-line bg-surface px-3 py-3 sm:px-5 sm:py-4"
       >
-        <div class="flex items-center justify-between">
-          <p class="text-[10.5px] text-muted">{{ item.label }}</p>
-          <component :is="item.icon" :size="14" :class="item.tone" />
+        <div class="flex items-center justify-between gap-1">
+          <p class="text-[9.5px] text-muted sm:text-[10.5px]">{{ item.label }}</p>
+          <component :is="item.icon" :size="13" :class="item.tone" class="hidden shrink-0 sm:block" />
         </div>
-        <p class="mt-1 flex items-baseline gap-1.5">
-          <span class="text-[26px] font-semibold leading-none tracking-tight" :class="item.tone">{{ item.value }}</span>
+        <p class="mt-1 flex items-baseline gap-1">
+          <span class="text-[19px] font-semibold leading-none tracking-tight sm:text-[26px]" :class="item.tone">{{ item.value }}</span>
         </p>
-        <p class="mt-1.5 text-[10px] text-muted">{{ item.hint }}</p>
+        <p class="mt-1 line-clamp-2 text-[9px] leading-snug text-muted sm:text-[10px]">{{ item.hint }}</p>
       </section>
     </div>
 
-    <section class="mt-4 rounded-2xl border border-line bg-surface p-5">
+    <section class="mt-4 rounded-2xl border border-line bg-surface p-4 sm:p-5">
       <div class="flex items-center justify-between">
         <h2 class="flex items-center gap-1.5 text-[13px] font-semibold">
           <Sparkles :size="13" class="text-brand" />
@@ -109,7 +109,7 @@ watch(currentKey, load)
       </ol>
     </section>
 
-    <section v-if="plan?.stages?.[1]?.tasks?.length" class="mt-4 rounded-2xl border border-line bg-surface p-5">
+    <section v-if="plan?.stages?.[1]?.tasks?.length" class="mt-4 rounded-2xl border border-line bg-surface p-4 sm:p-5">
       <div class="flex items-center justify-between">
         <h2 class="text-[13px] font-semibold">接下来</h2>
         <span class="text-[10px] text-muted">预计 {{ plan.stages?.[1]?.minutes ?? 0 }} 分钟</span>
@@ -121,7 +121,7 @@ watch(currentKey, load)
       </ul>
     </section>
 
-    <section class="mt-4 rounded-2xl border border-line bg-surface p-5">
+    <section class="mt-4 rounded-2xl border border-line bg-surface p-4 sm:p-5">
       <div class="flex items-center justify-between">
         <h2 class="text-[13px] font-semibold">章节进度</h2>
         <span class="text-[10px] text-muted">按知识点覆盖与正确率计算</span>

@@ -116,12 +116,12 @@ function exportAttempts() {
 </script>
 
 <template>
-  <div class="animate-fade-up px-9 py-8">
+  <div class="animate-fade-up page">
     <div>
       <h1 class="text-[26px] font-semibold leading-tight tracking-[-0.025em]">我的</h1>
     </div>
 
-    <div class="mt-6 grid items-start gap-4 xl:grid-cols-[296px_1fr]">
+    <div class="mt-6 grid grid-cols-[minmax(0,1fr)] items-start gap-4 xl:grid-cols-[296px_minmax(0,1fr)]">
       <section class="surface p-5">
         <div class="flex items-center gap-3">
           <div
@@ -164,7 +164,7 @@ function exportAttempts() {
 
       <div class="flex flex-col gap-4">
         <section class="surface overflow-hidden">
-          <header class="flex flex-wrap items-center justify-between gap-2 border-b border-line px-5 py-3.5">
+          <header class="flex flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-3 sm:px-5 sm:py-3.5">
             <div class="flex items-center gap-2">
               <FileText :size="14" class="text-muted" />
               <h2 class="text-[12.5px] font-medium">练习记录</h2>
@@ -186,7 +186,7 @@ function exportAttempts() {
             </div>
           </header>
 
-          <div class="hidden grid-cols-[1fr_64px_88px_72px] gap-3 border-b border-line px-5 py-2 text-[9.5px] text-muted md:grid">
+          <div class="hidden grid-cols-[1fr_64px_88px_72px] gap-3 border-b border-line px-4 py-2 text-[9.5px] text-muted sm:px-5 md:grid">
             <span>题目</span>
             <span>结果</span>
             <span>章节</span>
@@ -197,7 +197,7 @@ function exportAttempts() {
             <li
               v-for="a in visible"
               :key="a.attempt_id"
-              class="grid grid-cols-1 items-center gap-2 border-b border-line px-5 py-3 transition-colors last:border-b-0 hover:bg-tint-soft md:grid-cols-[1fr_64px_88px_72px] md:gap-3"
+              class="grid grid-cols-1 items-center gap-2 border-b border-line px-4 py-3 transition-colors last:border-b-0 hover:bg-tint-soft sm:px-5 md:grid-cols-[1fr_64px_88px_72px] md:gap-3"
             >
               <div class="min-w-0">
                 <p class="truncate text-[12px] text-subink">{{ a.stem }}</p>

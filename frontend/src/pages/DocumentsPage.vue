@@ -271,7 +271,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="animate-fade-up px-9 py-8">
+  <div class="animate-fade-up page">
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
         <h1 class="text-[26px] font-semibold leading-tight tracking-[-0.025em]">知识库</h1>
@@ -288,19 +288,19 @@ onMounted(() => {
     </div>
 
     <section class="surface mt-5 grid grid-cols-2 divide-line md:grid-cols-4 md:divide-x">
-      <div class="px-5 py-3.5">
+      <div class="px-4 py-3 sm:px-5 sm:py-3.5">
         <div class="text-[10px] text-muted">文档</div>
         <div class="mt-1 text-[19px] font-semibold leading-none">{{ docList.length }}</div>
       </div>
-      <div class="px-5 py-3.5">
+      <div class="px-4 py-3 sm:px-5 sm:py-3.5">
         <div class="text-[10px] text-muted">分块</div>
         <div class="mt-1 text-[19px] font-semibold leading-none">{{ totalChunks }}</div>
       </div>
-      <div class="px-5 py-3.5">
+      <div class="px-4 py-3 sm:px-5 sm:py-3.5">
         <div class="text-[10px] text-muted">覆盖章节</div>
         <div class="mt-1 text-[19px] font-semibold leading-none">{{ chapterCount }}</div>
       </div>
-      <div class="flex items-center justify-between px-5 py-3.5">
+      <div class="flex items-center justify-between px-4 py-3 sm:px-5 sm:py-3.5">
         <div>
           <div class="text-[10px] text-muted">索引</div>
           <div class="mt-1 flex items-center gap-1.5">
@@ -318,7 +318,7 @@ onMounted(() => {
       {{ notice }}
     </p>
 
-    <div class="mt-4 grid gap-4 xl:grid-cols-[1fr_320px]">
+    <div class="mt-4 grid grid-cols-[minmax(0,1fr)] gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
       <div class="flex flex-col gap-4">
         <div
           class="flex h-[118px] cursor-pointer flex-col items-center justify-center gap-1.5 rounded-[18px] border border-dashed border-line-strong bg-surface/55 text-center transition-all duration-200 hover:border-brand/35 hover:bg-brand-soft/25"
@@ -330,7 +330,7 @@ onMounted(() => {
         </div>
 
         <section class="surface overflow-hidden">
-          <header class="flex items-center justify-between border-b border-line px-5 py-3.5">
+          <header class="flex items-center justify-between border-b border-line px-4 py-3 sm:px-5 sm:py-3.5">
             <div class="flex items-center gap-2">
               <h2 class="text-[12.5px] font-medium">全部文档</h2>
               <span class="rounded-md bg-tint px-1.5 py-0.5 text-[10px] text-muted">
@@ -341,7 +341,7 @@ onMounted(() => {
           </header>
 
           <div
-            class="hidden grid-cols-[1fr_76px_44px_44px_48px_62px_78px_16px] gap-3 border-b border-line px-5 py-2 text-[9.5px] text-muted md:grid"
+            class="hidden grid-cols-[1fr_76px_44px_44px_48px_62px_78px_16px] gap-3 border-b border-line px-4 py-2 text-[9.5px] text-muted sm:px-5 md:grid"
           >
             <span>文档</span>
             <span>章节</span>
@@ -357,7 +357,7 @@ onMounted(() => {
             <li
               v-for="doc in docList"
               :key="doc.id"
-              class="grid cursor-pointer grid-cols-1 items-center gap-2 border-b border-line px-5 py-3 transition-colors last:border-b-0 md:grid-cols-[1fr_76px_44px_44px_48px_62px_78px_16px] md:gap-3"
+              class="grid cursor-pointer grid-cols-1 items-center gap-2 border-b border-line px-4 py-3 transition-colors last:border-b-0 sm:px-5 md:grid-cols-[1fr_76px_44px_44px_48px_62px_78px_16px] md:gap-3"
               :class="selectedId === doc.id ? 'bg-brand-soft/35' : 'hover:bg-tint-soft'"
               @click="selectedId = doc.id"
             >

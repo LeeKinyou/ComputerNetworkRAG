@@ -28,7 +28,7 @@ function goAssignment(id?: string | null) {
 </script>
 
 <template>
-  <div class="flex items-start gap-3 rounded-xl border border-line bg-tint-soft px-4 py-3">
+  <div class="flex flex-wrap items-start gap-x-3 gap-y-2 rounded-xl border border-line bg-tint-soft px-3.5 py-3 sm:px-4">
     <span
       v-if="index !== undefined"
       class="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-surface text-[11px] font-semibold text-muted"
@@ -45,11 +45,11 @@ function goAssignment(id?: string | null) {
       </div>
       <p class="mt-1 text-[11px] leading-relaxed text-muted">{{ task.reason }}</p>
     </div>
-    <span class="mt-0.5 flex shrink-0 items-center gap-1 text-[10px] text-muted">
+    <span class="mt-0.5 hidden shrink-0 items-center gap-1 text-[10px] text-muted sm:flex">
       <Clock :size="10.5" />
       {{ task.minutes }} 分钟
     </span>
-    <div class="mt-0.5 flex shrink-0 items-center gap-1.5">
+    <div class="mt-0.5 flex w-full shrink-0 items-center justify-end gap-1.5 sm:w-auto">
       <button
         v-if="task.kind === 'assignment'"
         class="pill-btn h-7 border border-line bg-surface px-2.5 text-[10.5px] text-subink hover:border-brand/40 hover:text-brand"

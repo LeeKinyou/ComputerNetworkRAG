@@ -209,10 +209,10 @@ function retry(conceptId: string | null) {
 </script>
 
 <template>
-  <div class="animate-fade-up px-9 py-8">
-    <div class="flex flex-wrap items-start justify-between gap-4">
+  <div class="animate-fade-up page">
+    <div class="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
       <div>
-        <h1 class="text-[26px] font-semibold leading-tight tracking-[-0.025em]">学习报告</h1>
+        <h1 class="text-[22px] font-semibold leading-tight tracking-[-0.025em] sm:text-[26px]">学习报告</h1>
       </div>
       <div class="flex items-center gap-0.5 rounded-full bg-tint p-0.5">
         <button
@@ -232,8 +232,8 @@ function retry(conceptId: string | null) {
       </div>
     </div>
 
-    <section class="surface mt-5 grid grid-cols-2 divide-line md:grid-cols-4 md:divide-x">
-      <div class="px-5 py-4">
+    <section class="surface mt-4 grid grid-cols-2 divide-line sm:mt-5 md:grid-cols-4 md:divide-x">
+      <div class="px-4 py-3.5 sm:px-5 sm:py-4">
         <div class="flex items-center gap-1.5 text-[10px] text-muted">
           <Clock3 :size="11" />
           {{ scopedLabel }}
@@ -246,7 +246,7 @@ function retry(conceptId: string | null) {
           </span>
         </div>
       </div>
-      <div class="px-5 py-4">
+      <div class="px-4 py-3.5 sm:px-5 sm:py-4">
         <div class="flex items-center gap-1.5 text-[10px] text-muted">
           <CheckCheck :size="11" />
           累计正确率
@@ -258,7 +258,7 @@ function retry(conceptId: string | null) {
           <span class="mb-0.5 text-[9.5px] text-muted">共 {{ attempts.length }} 次作答</span>
         </div>
       </div>
-      <div class="px-5 py-4">
+      <div class="px-4 py-3.5 sm:px-5 sm:py-4">
         <div class="flex items-center gap-1.5 text-[10px] text-muted">
           <BookMarked :size="11" />
           知识点覆盖
@@ -270,7 +270,7 @@ function retry(conceptId: string | null) {
           <span class="mb-0.5 text-[9.5px] text-muted">/ {{ plan?.summary.total ?? 0 }} 个</span>
         </div>
       </div>
-      <div class="px-5 py-4">
+      <div class="px-4 py-3.5 sm:px-5 sm:py-4">
         <div class="flex items-center gap-1.5 text-[10px] text-muted">
           <Target :size="11" />
           掌握度
@@ -282,10 +282,10 @@ function retry(conceptId: string | null) {
       </div>
     </section>
 
-    <div class="mt-4 grid items-start gap-4 xl:grid-cols-[1fr_328px]">
+    <div class="mt-4 grid grid-cols-[minmax(0,1fr)] items-start gap-4 xl:grid-cols-[minmax(0,1fr)_328px]">
       <div class="flex flex-col gap-4">
         <section class="surface overflow-hidden">
-          <header class="flex items-center justify-between border-b border-line px-5 py-3.5">
+          <header class="flex items-center justify-between border-b border-line px-4 py-3 sm:px-5 sm:py-3.5">
             <div class="flex items-center gap-2">
               <Brain :size="14" class="text-muted" />
               <h2 class="text-[12.5px] font-medium">掌握度</h2>
@@ -296,7 +296,7 @@ function retry(conceptId: string | null) {
             </RouterLink>
           </header>
 
-          <div class="p-5">
+          <div class="p-4 sm:p-5">
             <div v-if="!total" class="rounded-xl border border-line bg-tint-soft px-4 py-6 text-center">
               <p class="text-[11px] text-muted">还没有可统计的作答记录</p>
               <RouterLink
@@ -350,14 +350,14 @@ function retry(conceptId: string | null) {
         </section>
 
         <section class="surface overflow-hidden">
-          <header class="flex items-center justify-between border-b border-line px-5 py-3.5">
+          <header class="flex items-center justify-between border-b border-line px-4 py-3 sm:px-5 sm:py-3.5">
             <div class="flex items-center gap-2">
               <TrendingUp :size="14" class="text-muted" />
               <h2 class="text-[12.5px] font-medium">正确率趋势 · 本周 vs 上周</h2>
             </div>
             <span class="text-[9.5px] text-muted">近 14 天</span>
           </header>
-          <div class="px-5 pb-4 pt-4">
+          <div class="px-4 pb-4 pt-4 sm:px-5">
             <div v-if="!hasTrendData" class="py-6 text-center text-[11px] text-muted">
               最近 14 天还没有作答记录，练几题后这里会出现趋势线。
             </div>
@@ -411,14 +411,14 @@ function retry(conceptId: string | null) {
         </section>
 
         <section class="surface overflow-hidden">
-          <header class="flex items-center justify-between border-b border-line px-5 py-3.5">
+          <header class="flex items-center justify-between border-b border-line px-4 py-3 sm:px-5 sm:py-3.5">
             <div class="flex items-center gap-2">
               <TrendingUp :size="14" class="text-muted" />
               <h2 class="text-[12.5px] font-medium">{{ range === 'week' ? '近 7 天练习' : '近 4 周练习' }}</h2>
             </div>
             <span class="text-[9.5px] text-muted">共 {{ totalInChart }} 次</span>
           </header>
-          <div class="px-5 pb-4 pt-5">
+          <div class="px-4 pb-4 pt-5 sm:px-5">
             <div class="flex h-[96px] items-stretch gap-3">
               <div v-for="d in dailySeries" :key="d.label" class="flex h-full flex-1 flex-col items-center gap-1.5">
                 <span class="font-mono text-[8.5px] text-muted">{{ d.value || '' }}</span>
@@ -436,7 +436,7 @@ function retry(conceptId: string | null) {
         </section>
 
         <section class="surface overflow-hidden">
-          <header class="flex items-center justify-between border-b border-line px-5 py-3.5">
+          <header class="flex items-center justify-between border-b border-line px-4 py-3 sm:px-5 sm:py-3.5">
             <div class="flex items-center gap-2">
               <BookMarked :size="14" class="text-muted" />
               <h2 class="text-[12.5px] font-medium">错题本</h2>
@@ -464,7 +464,7 @@ function retry(conceptId: string | null) {
                   错 {{ m.wrong }} 次 / 共 {{ m.attempts }} 次 · {{ m.chapter_title }}
                 </p>
               </div>
-              <span class="shrink-0 rounded-full bg-warn/12 px-1.5 py-0.5 text-[9px] text-warn">待复习</span>
+              <span class="hidden shrink-0 rounded-full bg-warn/12 px-1.5 py-0.5 text-[9px] text-warn sm:inline">待复习</span>
               <RouterLink :to="retry(m.concept_id)" class="shrink-0 text-[9.5px] text-brand hover:underline">
                 重练
               </RouterLink>
