@@ -261,38 +261,40 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="animate-fade-up px-9 py-8">
-    <div class="flex flex-wrap items-start justify-between gap-4">
+  <div class="animate-fade-up page">
+    <div class="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
       <div>
-        <h1 class="text-[26px] font-semibold leading-tight tracking-[-0.025em]">练习中心</h1>
+        <h1 class="text-[22px] font-semibold leading-tight tracking-[-0.025em] sm:text-[26px]">练习中心</h1>
       </div>
-      <div class="flex flex-wrap items-center gap-1.5">
+      <div
+        class="scroll-x -mx-4 flex w-full items-center gap-1.5 overflow-x-auto px-4 pb-0.5 sm:mx-0 sm:w-auto sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0"
+      >
         <span
           v-if="questionIds.length"
-          class="rounded-full bg-[#FBECEC] px-2.5 py-1 text-[10px] text-[#B4552D]"
+          class="shrink-0 rounded-full bg-[#FBECEC] px-2.5 py-1 text-[10px] text-[#B4552D]"
         >
           错题重做 · {{ questionIds.length }} 题
         </span>
         <span
           v-else-if="recommended"
-          class="rounded-full bg-[#FFF3E2] px-2.5 py-1 text-[10px] text-[#8A6A32]"
+          class="shrink-0 rounded-full bg-[#FFF3E2] px-2.5 py-1 text-[10px] text-[#8A6A32]"
         >
           为你推荐
         </span>
         <span
           v-else-if="conceptId"
-          class="rounded-full bg-brand-soft px-2.5 py-1 text-[10px] text-brand"
+          class="shrink-0 rounded-full bg-brand-soft px-2.5 py-1 text-[10px] text-brand"
         >
           按知识点组卷
         </span>
         <span
           v-else-if="conceptIds.length"
-          class="rounded-full bg-brand-soft px-2.5 py-1 text-[10px] text-brand"
+          class="shrink-0 rounded-full bg-brand-soft px-2.5 py-1 text-[10px] text-brand"
         >
           专项 · {{ conceptIds.length }} 个知识点
         </span>
         <button
-          class="rounded-full px-2.5 py-1 text-[10.5px] transition-colors"
+          class="shrink-0 rounded-full px-2.5 py-1 text-[10.5px] transition-colors"
           :class="chapterId === '' && !recommended && !conceptIds.length && !questionIds.length ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-subink'"
           @click="chapterId = ''; conceptId = ''; conceptIds = []; questionIds = []; start()"
         >
@@ -301,14 +303,14 @@ onUnmounted(() => {
         <button
           v-for="chapter in chapters"
           :key="chapter.id"
-          class="rounded-full px-2.5 py-1 text-[10.5px] transition-colors"
+          class="shrink-0 rounded-full px-2.5 py-1 text-[10.5px] transition-colors"
           :class="chapterId === chapter.id ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-subink'"
           @click="chapterId = chapter.id; conceptId = ''; conceptIds = []; questionIds = []; start()"
         >
           {{ chapter.title }}
         </button>
         <button
-          class="rounded-full border border-line px-2.5 py-1 text-[10.5px] text-subink transition-colors hover:border-line-strong hover:text-ink"
+          class="shrink-0 rounded-full border border-line px-2.5 py-1 text-[10.5px] text-subink transition-colors hover:border-line-strong hover:text-ink"
           @click="recommend"
         >
           为我推荐
@@ -316,22 +318,25 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <section class="surface mt-5 grid grid-cols-2 divide-line md:grid-cols-4 md:divide-x">
-      <div class="px-5 py-3.5">
+    <section class="surface mt-4 grid grid-cols-2 divide-line sm:mt-5 md:grid-cols-4 md:divide-x">
+      <div class="px-4 py-3 sm:px-5 sm:py-3.5">
         <div class="text-[10px] text-muted">本组题目</div>
         <div class="mt-1 text-[19px] font-semibold leading-none">{{ questions.length }}</div>
       </div>
-      <div class="px-5 py-3.5">
+      <div class="px-4 py-3 sm:px-5 sm:py-3.5">
         <div class="text-[10px] text-muted">已作答</div>
         <div class="mt-1 text-[19px] font-semibold leading-none">{{ answeredCount }}</div>
       </div>
-      <div class="px-5 py-3.5">
+      <div class="border-t border-line px-4 py-3 sm:px-5 sm:py-3.5 md:border-t-0">
         <div class="text-[10px] text-muted">本组正确率</div>
-        <div class="mt-1 text-[19px] font-semibold leading-none" :class="accuracy >= 60 ? 'text-success' : 'text-warn'">
+        <div
+          class="mt-1 text-[19px] font-semibold leading-none"
+          :class="answeredCount ? (accuracy >= 60 ? 'text-success' : 'text-warn') : 'text-muted'"
+        >
           {{ answeredCount ? accuracy + '%' : '—' }}
         </div>
       </div>
-      <div class="flex items-center justify-between px-5 py-3.5">
+      <div class="flex items-center justify-between border-t border-line px-4 py-3 sm:px-5 sm:py-3.5 md:border-t-0">
         <div>
           <div class="text-[10px] text-muted">累计作答</div>
           <div class="mt-1 flex items-center gap-2 text-[12px]">
@@ -345,9 +350,9 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <div class="mt-4 grid items-start gap-4 xl:grid-cols-[1fr_320px]">
-      <section class="surface flex min-h-[420px] flex-col overflow-hidden">
-        <header class="flex items-center justify-between border-b border-line px-5 py-3.5">
+    <div class="mt-4 grid grid-cols-[minmax(0,1fr)] items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <section class="surface flex min-h-[360px] flex-col overflow-hidden sm:min-h-[420px]">
+        <header class="flex items-center justify-between gap-2 border-b border-line px-4 py-3 sm:px-5 sm:py-3.5">
           <div class="flex items-center gap-2">
             <ListChecks :size="14" class="text-muted" />
             <h2 class="text-[12.5px] font-medium">
@@ -366,7 +371,7 @@ onUnmounted(() => {
               {{ difficultyLabel[current.difficulty] ?? '进阶' }}
             </span>
           </div>
-          <span class="text-[9.5px] text-muted">数字键选择 · Enter 提交</span>
+          <span class="hidden text-[9.5px] text-muted sm:inline">数字键选择 · Enter 提交</span>
         </header>
 
         <div v-if="loading" class="flex flex-1 items-center justify-center gap-2 text-[12px] text-muted">
@@ -378,7 +383,7 @@ onUnmounted(() => {
           这个章节还没有题目，先做「全部章节」试试。
         </div>
 
-        <div v-else-if="finished" class="flex flex-1 flex-col p-5">
+        <div v-else-if="finished" class="flex flex-1 flex-col p-4 sm:p-5">
           <div class="flex flex-wrap items-center gap-4">
             <div class="flex h-16 w-16 items-center justify-center rounded-full border border-line bg-tint-soft">
               <span class="text-[24px] font-semibold leading-none">{{ accuracy }}%</span>
@@ -435,7 +440,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div v-else class="flex flex-1 flex-col p-5">
+        <div v-else class="flex flex-1 flex-col p-4 sm:p-5">
           <p v-if="recommended && current?.reason" class="mb-2 text-[10.5px] text-brand">
             {{ current.reason }}
           </p>
@@ -585,7 +590,7 @@ onUnmounted(() => {
 
     <div
       v-if="toast"
-      class="pointer-events-none fixed bottom-8 left-1/2 z-50 -translate-x-1/2 rounded-full bg-ink px-3.5 py-1.5 text-[11px] text-canvas shadow-lg"
+      class="pointer-events-none fixed bottom-24 left-1/2 lg:bottom-8 z-50 -translate-x-1/2 rounded-full bg-ink px-3.5 py-1.5 text-[11px] text-canvas shadow-lg"
     >
       {{ toast }}
     </div>

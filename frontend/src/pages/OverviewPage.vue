@@ -192,27 +192,27 @@ function timeLabel(value: string) {
 </script>
 
 <template>
-  <div class="animate-fade-up px-9 py-8">
+  <div class="animate-fade-up page">
     <div class="flex flex-wrap items-end justify-between gap-4">
       <div>
         <p class="text-[11.5px] text-muted">
           {{ greeting }}，{{ current.name }} · 计算机网络
         </p>
-        <h1 class="mt-1 text-[26px] font-semibold leading-tight tracking-[-0.025em]">
+        <h1 class="mt-1 text-[22px] font-semibold leading-tight tracking-[-0.025em] sm:text-[26px]">
           {{ headline }}
         </h1>
         <p class="mt-1.5 text-[12.5px] text-muted">{{ subline }}</p>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto">
         <RouterLink
           to="/path"
-          class="pill-btn h-9 border border-line bg-surface text-subink hover:border-line-strong hover:text-ink"
+          class="pill-btn h-9 flex-1 justify-center border border-line bg-surface text-subink hover:border-line-strong hover:text-ink sm:flex-none"
         >
           调整计划
         </RouterLink>
         <RouterLink
           :to="mainTask ? taskPath(mainTask) : '/assignments'"
-          class="pill-btn h-9 bg-ink pl-3.5 text-canvas shadow-[0_6px_16px_-8px_rgba(17,19,24,0.55)] hover:opacity-90"
+          class="pill-btn h-9 flex-1 justify-center bg-ink pl-3.5 text-canvas shadow-[0_6px_16px_-8px_rgba(17,19,24,0.55)] hover:opacity-90 sm:flex-none"
         >
           <PlayCircle :size="15" />
           开始今天的学习
@@ -220,10 +220,10 @@ function timeLabel(value: string) {
       </div>
     </div>
 
-    <div class="mt-6 grid items-start gap-4 xl:grid-cols-[1fr_320px]">
+    <div class="mt-6 grid grid-cols-[minmax(0,1fr)] items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
       <div class="flex flex-col gap-4">
         <section class="surface overflow-hidden">
-          <header class="flex items-center justify-between border-b border-line px-5 py-3.5">
+          <header class="flex items-center justify-between border-b border-line px-4 py-3 sm:px-5 sm:py-3.5">
             <h2 class="text-[12.5px] font-medium">今日任务</h2>
             <span class="text-[10.5px] text-muted">{{ tasks.length }} 项 · {{ totalMinutes }} 分钟</span>
           </header>
@@ -252,7 +252,7 @@ function timeLabel(value: string) {
                   </div>
                   <p class="mt-0.5 truncate text-[10.5px] text-muted">{{ t.reason }}</p>
                 </div>
-                <span class="flex shrink-0 items-center gap-1 text-[10.5px] text-muted">
+                <span class="hidden shrink-0 items-center gap-1 text-[10.5px] text-muted sm:flex">
                   <Clock3 :size="11" />
                   {{ t.minutes }} 分钟
                 </span>
@@ -276,7 +276,7 @@ function timeLabel(value: string) {
         </section>
 
         <section v-if="focusChapter" class="surface overflow-hidden">
-          <header class="flex items-center justify-between border-b border-line px-5 py-3.5">
+          <header class="flex items-center justify-between border-b border-line px-4 py-3 sm:px-5 sm:py-3.5">
             <div class="flex items-center gap-2">
               <BookOpen :size="14" class="text-muted" />
               <h2 class="text-[12.5px] font-medium">继续学习</h2>
