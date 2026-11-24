@@ -57,6 +57,9 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  -webkit-tap-highlight-color: transparent;
+  overflow-x: hidden;
+  overscroll-behavior-y: none;
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
@@ -90,6 +93,10 @@ body {
 }
 
 @layer components {
+  /* 页面容器：手机 16px 边距，平板 24px，桌面沿用 36px */
+  .page {
+    @apply px-4 pb-6 pt-5 sm:px-6 sm:py-6 lg:px-9 lg:py-8;
+  }
   .surface {
     @apply rounded-[18px] border border-line bg-surface;
     box-shadow:
@@ -178,4 +185,37 @@ body {
 
 .animate-soft-pulse {
   animation: soft-pulse 1.4s ease-in-out infinite;
+}
+
+/* 手机端底部固定区域（标签栏、输入条）避开刘海屏手势区 */
+.safe-bottom {
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.25rem);
+}
+
+/* 横向滑动的筛选胶囊：手机上隐藏滚动条，避免出现第二条视觉轴线 */
+.scroll-x {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scroll-x::-webkit-scrollbar {
+  display: none;
+}
+
+/* 移动端浏览器地址栏收起时，100% 会高于可视区，用 dvh 让外壳始终贴合屏幕 */
+@supports (height: 100dvh) {
+  html,
+  body,
+  #app {
+    height: 100dvh;
+  }
+}
+
+/* iOS Safari 聚焦小于 16px 的输入框会自动放大页面，这里单独抬到 16px 保持界面不跳 */
+@supports (-webkit-touch-callout: none) {
+  @media (max-width: 1023px) {
+    input:not([type='checkbox']):not([type='radio']),
+    textarea {
+      font-size: 16px;
+    }
+  }
 }
