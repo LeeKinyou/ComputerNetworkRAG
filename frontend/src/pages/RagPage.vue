@@ -15,7 +15,7 @@ const pipeline = [
 </script>
 
 <template>
-  <div class="animate-fade-up px-9 py-8">
+  <div class="animate-fade-up page">
     <div class="flex flex-wrap items-start justify-between gap-4">
       <div>
         <h1 class="text-[26px] font-semibold leading-tight tracking-[-0.025em]">RAG 问答</h1>
@@ -51,7 +51,7 @@ const pipeline = [
       </template>
     </div>
 
-    <div class="mt-5 grid items-start gap-4 xl:grid-cols-[1fr_300px]">
+    <div class="mt-5 grid grid-cols-[minmax(0,1fr)] items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
       <div class="flex flex-col gap-4">
         <section class="surface p-5">
           <div class="flex items-center gap-2 text-[11px] text-muted">
@@ -86,7 +86,7 @@ const pipeline = [
         </section>
 
         <section class="surface overflow-hidden">
-          <header class="flex items-center justify-between border-b border-line px-5 py-3.5">
+          <header class="flex items-center justify-between border-b border-line px-4 py-3 sm:px-5 sm:py-3.5">
             <h2 class="text-[12.5px] font-medium">引用片段</h2>
             <span class="text-[10.5px] text-muted">按重排分数排序</span>
           </header>

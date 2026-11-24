@@ -44,8 +44,8 @@ const elapsed = computed(() => task.steps.slice(0, Math.min(stepIndex.value, tas
 </script>
 
 <template>
-  <div class="dark flex h-screen w-screen flex-col overflow-hidden bg-canvas text-ink">
-    <header class="flex h-[62px] shrink-0 items-center justify-between border-b border-line px-7">
+  <div class="dark flex h-dvh w-full flex-col overflow-hidden bg-canvas text-ink">
+    <header class="flex h-[58px] shrink-0 items-center justify-between gap-3 border-b border-line px-4 sm:h-[62px] sm:px-7">
       <div class="flex items-center gap-3">
         <div
           class="grid h-9 w-9 place-items-center rounded-[11px] bg-gradient-to-br from-[#3d78ff] to-[#2251d6] text-white shadow-[0_6px_16px_-6px_rgba(47,107,255,0.6)]"
@@ -62,8 +62,8 @@ const elapsed = computed(() => task.steps.slice(0, Math.min(stepIndex.value, tas
         </span>
       </div>
 
-      <div class="flex items-center gap-6">
-        <div class="text-right">
+      <div class="flex items-center gap-3 sm:gap-6">
+        <div class="hidden text-right sm:block">
           <div class="font-mono text-[21px] leading-none tracking-tight">
             {{ clock }}<span class="text-[12px] text-muted">:{{ seconds }}</span>
           </div>
@@ -79,9 +79,9 @@ const elapsed = computed(() => task.steps.slice(0, Math.min(stepIndex.value, tas
       </div>
     </header>
 
-    <main class="grid min-h-0 flex-1 grid-cols-[300px_1fr_336px] gap-4 p-5">
-      <div class="flex min-h-0 flex-col gap-4">
-        <section class="surface flex min-h-0 flex-1 flex-col overflow-hidden">
+    <main class="grid min-h-0 flex-1 grid-cols-1 content-start gap-3 overflow-y-auto p-3 sm:p-4 lg:grid-cols-[300px_1fr_336px] lg:content-stretch lg:gap-4 lg:overflow-hidden lg:p-5">
+      <div class="flex flex-col gap-4 lg:min-h-0">
+        <section class="surface flex flex-col overflow-hidden lg:min-h-0 lg:flex-1">
           <div class="border-b border-line px-4 py-3.5">
             <div class="flex items-center gap-1.5 text-[9.5px] text-muted">
               当前任务
@@ -91,7 +91,7 @@ const elapsed = computed(() => task.steps.slice(0, Math.min(stepIndex.value, tas
             <p class="mt-1 text-[9.5px] text-muted">{{ task.chapter }} · {{ elapsed }}ms</p>
           </div>
 
-          <div class="flex min-h-0 flex-1 flex-col justify-center gap-5 p-3">
+          <div class="flex flex-col justify-center gap-4 p-3 lg:min-h-0 lg:flex-1 lg:gap-5">
             <div
               v-for="(s, i) in task.steps"
               :key="s.id"
@@ -150,7 +150,7 @@ const elapsed = computed(() => task.steps.slice(0, Math.min(stepIndex.value, tas
         </section>
       </div>
 
-      <section class="surface flex min-h-0 flex-col overflow-hidden">
+      <section class="surface flex min-h-[300px] flex-col overflow-hidden lg:min-h-0">
         <header class="flex items-center justify-between border-b border-line px-4 py-3">
           <div class="flex items-center gap-2">
             <Waypoints :size="14" class="text-muted" />
@@ -177,7 +177,7 @@ const elapsed = computed(() => task.steps.slice(0, Math.min(stepIndex.value, tas
         </div>
       </section>
 
-      <div class="flex min-h-0 flex-col gap-4">
+      <div class="flex flex-col gap-4 lg:min-h-0">
         <section class="surface overflow-hidden">
           <header class="flex items-center justify-between border-b border-line px-3.5 py-2.5">
             <div class="flex items-center gap-1.5">
@@ -226,12 +226,12 @@ const elapsed = computed(() => task.steps.slice(0, Math.min(stepIndex.value, tas
           </div>
         </section>
 
-        <section class="surface flex min-h-0 flex-1 flex-col overflow-hidden">
+        <section class="surface flex flex-col overflow-hidden lg:min-h-0 lg:flex-1">
           <header class="flex items-center justify-between border-b border-line px-3.5 py-2.5">
             <h2 class="text-[11px] font-medium">最近问答</h2>
             <span class="text-[9px] text-muted">今日 23 次</span>
           </header>
-          <ul class="min-h-0 flex-1 overflow-hidden p-2">
+          <ul class="p-2 lg:min-h-0 lg:flex-1 lg:overflow-hidden">
             <li
               v-for="t in [task, tasks[1], tasks[2], tasks[4], tasks[3]]"
               :key="t.id"

@@ -195,15 +195,15 @@ function exportCsv() {
 </script>
 
 <template>
-  <div class="animate-fade-up px-9 py-8">
-    <div class="flex flex-wrap items-start justify-between gap-4">
+  <div class="animate-fade-up page">
+    <div class="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
       <div>
-        <h1 class="text-[26px] font-semibold leading-tight tracking-[-0.025em]">
+        <h1 class="text-[22px] font-semibold leading-tight tracking-[-0.025em] sm:text-[26px]">
           学情分析
-          <span v-if="scopeName" class="text-[18px] font-medium text-muted">· {{ scopeName }}</span>
+          <span v-if="scopeName" class="text-[16px] font-medium text-muted sm:text-[18px]">· {{ scopeName }}</span>
         </h1>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex w-full flex-wrap items-center gap-2 sm:w-auto">
         <select
           v-model="scope"
           class="h-9 rounded-full border border-line bg-surface px-3 text-[11px] text-subink outline-none transition-colors hover:border-line-strong"
@@ -240,8 +240,8 @@ function exportCsv() {
       </div>
     </div>
 
-    <section class="surface mt-5 grid grid-cols-1 divide-line md:grid-cols-3 md:divide-x">
-      <div class="px-5 py-4">
+    <section class="surface mt-4 grid grid-cols-1 divide-line sm:mt-5 md:grid-cols-3 md:divide-x">
+      <div class="px-4 py-3.5 sm:px-5 sm:py-4">
         <div class="flex items-center gap-1.5 text-[10px] text-muted">
           <BarChart3 :size="11" />
           {{ scope ? `${scopeName} · 本周练习` : insights.className }}
@@ -258,7 +258,7 @@ function exportCsv() {
           {{ scope ? `正确率 ${trend?.this_week.rate ?? 0}% · ${rateDeltaText}` : modeLine }}
         </p>
       </div>
-      <div class="px-5 py-4">
+      <div class="border-t border-line px-4 py-3.5 sm:px-5 sm:py-4 md:border-t-0">
         <div class="flex items-center gap-1.5 text-[10px] text-muted">
           <Flame :size="11" />
           {{ scope ? '待补知识点' : '最热问题' }}
@@ -279,7 +279,7 @@ function exportCsv() {
           <p class="mt-2 text-[9.5px] text-muted">{{ hotCount }} 次被问到，建议课上统一讲</p>
         </template>
       </div>
-      <div class="px-5 py-4">
+      <div class="border-t border-line px-4 py-3.5 sm:px-5 sm:py-4 md:border-t-0">
         <div class="flex items-center gap-1.5 text-[10px] text-muted">
           <Target :size="11" />
           最薄弱
@@ -293,10 +293,10 @@ function exportCsv() {
       </div>
     </section>
 
-    <div class="mt-4 grid items-start gap-4 xl:grid-cols-[1fr_328px]">
+    <div class="mt-4 grid grid-cols-[minmax(0,1fr)] items-start gap-4 xl:grid-cols-[minmax(0,1fr)_328px]">
       <div class="flex flex-col gap-4">
         <section class="surface overflow-hidden">
-          <header class="flex items-center justify-between border-b border-line px-5 py-3.5">
+          <header class="flex items-center justify-between border-b border-line px-4 py-3 sm:px-5 sm:py-3.5">
             <div class="flex items-center gap-2">
               <Target :size="14" class="text-muted" />
               <h2 class="text-[12.5px] font-medium">章节关注度</h2>
@@ -305,7 +305,7 @@ function exportCsv() {
               {{ scope ? '全班提问 · 不随学生切换' : '按引用命中的章节统计' }}
             </span>
           </header>
-          <div class="flex flex-col gap-3.5 p-5">
+          <div class="flex flex-col gap-3.5 p-4 sm:p-5">
             <div v-for="c in chapterRows" :key="c.label">
               <div class="flex items-center justify-between text-[11px]">
                 <span class="text-subink">{{ c.label }}</span>
@@ -325,7 +325,7 @@ function exportCsv() {
         </section>
 
         <section class="surface overflow-hidden">
-          <header class="flex items-center justify-between border-b border-line px-5 py-3.5">
+          <header class="flex items-center justify-between border-b border-line px-4 py-3 sm:px-5 sm:py-3.5">
             <div class="flex items-center gap-2">
               <BarChart3 :size="14" class="text-muted" />
               <h2 class="text-[12.5px] font-medium">概念掌握</h2>
@@ -334,7 +334,7 @@ function exportCsv() {
               已覆盖 {{ conceptCovered }} / {{ conceptTotal }} 个知识点
             </span>
           </header>
-          <div v-if="concepts.length" class="grid gap-x-7 gap-y-3 p-5 md:grid-cols-2">
+          <div v-if="concepts.length" class="grid gap-x-7 gap-y-3 p-4 sm:p-5 md:grid-cols-2">
             <div v-for="concept in concepts" :key="concept.concept_id">
               <div class="flex items-center justify-between text-[10.5px]">
                 <span class="truncate text-subink">{{ concept.title }}</span>
@@ -372,7 +372,7 @@ function exportCsv() {
         </section>
 
         <section class="surface overflow-hidden">
-          <header class="flex items-center justify-between border-b border-line px-5 py-3.5">
+          <header class="flex items-center justify-between border-b border-line px-4 py-3 sm:px-5 sm:py-3.5">
             <div class="flex items-center gap-2">
               <MessageSquareText :size="14" class="text-muted" />
               <h2 class="text-[12.5px] font-medium">高频问题</h2>
@@ -389,7 +389,7 @@ function exportCsv() {
               <p class="min-w-0 flex-1 truncate text-[11.5px] text-subink">{{ q.q }}</p>
               <span class="shrink-0 text-[9.5px] text-muted">{{ q.count }} 次</span>
               <button
-                class="shrink-0 rounded-full border border-line px-2 py-0.5 text-[9px] text-muted transition-colors hover:border-brand/40 hover:text-brand"
+                class="hidden shrink-0 rounded-full border border-line px-2 py-0.5 text-[9px] text-muted transition-colors hover:border-brand/40 hover:text-brand sm:inline-flex"
                 @click="act('已生成答疑卡')"
               >
                 生成答疑卡
