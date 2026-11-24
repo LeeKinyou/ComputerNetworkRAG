@@ -387,7 +387,7 @@ onMounted(boot)
 </script>
 
 <template>
-  <div class="animate-fade-up px-9 py-8">
+  <div class="animate-fade-up page">
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div class="flex items-center gap-2">
         <h1 class="text-[26px] font-semibold leading-tight tracking-[-0.025em]">作业</h1>
@@ -414,10 +414,18 @@ onMounted(boot)
       <button class="text-[10px] text-warn/70 hover:text-warn" @click="notice = ''">知道了</button>
     </p>
 
-    <div class="mt-5 grid gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
-      <aside class="space-y-2">
-        <div v-if="loading && !rows.length" class="surface p-6 text-center text-[12px] text-muted">加载中</div>
-        <div v-else-if="!rows.length" class="surface p-6 text-center">
+    <div class="mt-5 grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
+      <!-- 手机：作业列表改成可横滑的卡片条，避免详情被列表推到屏幕外 -->
+      <aside
+        class="scroll-x -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 lg:mx-0 lg:block lg:space-y-2 lg:overflow-visible lg:px-0 lg:pb-0"
+      >
+        <div
+          v-if="loading && !rows.length"
+          class="surface w-full shrink-0 p-6 text-center text-[12px] text-muted"
+        >
+          加载中
+        </div>
+        <div v-else-if="!rows.length" class="surface w-full shrink-0 p-6 text-center">
           <p class="text-[12.5px] font-medium text-ink">还没有作业</p>
           <p v-if="teacher" class="mt-1 text-[11px] text-muted">点右上「新建作业」上传题目。</p>
           <p v-else class="mt-1 text-[11px] text-muted">等老师发布后这里会出现。</p>
@@ -426,7 +434,7 @@ onMounted(boot)
         <button
           v-for="row in rows"
           :key="row.id"
-          class="w-full rounded-2xl border px-4 py-3 text-left transition"
+          class="w-[76%] max-w-[280px] shrink-0 rounded-2xl border px-4 py-3 text-left transition lg:w-full lg:max-w-none"
           :class="
             row.id === currentId
               ? 'border-brand/50 bg-surface ring-1 ring-brand/15 shadow-[0_6px_20px_-16px_rgba(16,24,40,0.5)]'
@@ -453,7 +461,7 @@ onMounted(boot)
         </button>
       </aside>
 
-      <section v-if="detail" class="surface p-6">
+      <section v-if="detail" class="surface p-4 sm:p-6">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 class="text-[17px] font-semibold tracking-tight">{{ detail.title }}</h2>
@@ -563,7 +571,7 @@ onMounted(boot)
                 </div>
                 <p class="mt-1 text-[10.5px] leading-relaxed text-muted">作答：{{ item.answer || '（空）' }}</p>
                 <p class="mt-1 text-[10.5px] leading-relaxed text-subink">{{ item.feedback }}</p>
-                <div class="mt-2 flex items-center gap-2">
+                <div class="mt-2 flex flex-wrap items-center gap-2">
                   <input
                     v-model="scoreDrafts[item.item_id]"
                     type="number"
@@ -573,7 +581,7 @@ onMounted(boot)
                   />
                   <input
                     v-model="feedbackDrafts[item.item_id]"
-                    class="h-7 flex-1 rounded-md border border-line bg-surface px-2 text-[11px] outline-none focus:border-brand/60"
+                    class="h-7 min-w-[120px] flex-1 rounded-md border border-line bg-surface px-2 text-[11px] outline-none focus:border-brand/60"
                     placeholder="评语"
                   />
                   <button
@@ -684,10 +692,10 @@ onMounted(boot)
     <!-- 新建作业 -->
     <div
       v-if="dialogOpen"
-      class="fixed inset-0 z-50 grid place-items-center bg-ink/25 px-6 py-10 backdrop-blur-sm"
+      class="fixed inset-0 z-50 grid place-items-center bg-ink/25 px-3 py-4 backdrop-blur-sm sm:px-6 sm:py-10"
       @click.self="dialogOpen = false"
     >
-      <div class="max-h-[92vh] w-full max-w-[720px] overflow-y-auto rounded-2xl border border-line bg-surface p-5 shadow-2xl">
+      <div class="max-h-[92vh] w-full max-w-[720px] overflow-y-auto rounded-2xl border border-line bg-surface p-4 shadow-2xl sm:p-5">
         <div class="flex items-center justify-between">
           <h3 class="text-[15px] font-semibold">新建作业</h3>
           <button class="grid h-7 w-7 place-items-center rounded-full text-muted hover:bg-tint" @click="dialogOpen = false">
