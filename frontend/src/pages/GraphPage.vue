@@ -248,18 +248,18 @@ watch(currentKey, () => {
 </script>
 
 <template>
-  <div class="animate-fade-up px-9 py-8">
-    <div class="flex flex-wrap items-start justify-between gap-4">
+  <div class="animate-fade-up page">
+    <div class="flex flex-wrap items-start justify-between gap-3 sm:gap-4">
       <div>
-        <h1 class="text-[26px] font-semibold leading-tight tracking-[-0.025em]">知识图谱</h1>
+        <h1 class="text-[22px] font-semibold leading-tight tracking-[-0.025em] sm:text-[26px]">知识图谱</h1>
       </div>
-      <div class="relative">
+      <div class="relative w-full sm:w-auto">
         <Search :size="14" class="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" />
         <input
           v-model="query"
           type="text"
           placeholder="搜索知识点"
-          class="h-9 w-[248px] rounded-full border border-line bg-surface pl-9 pr-4 text-[12.5px] text-ink outline-none transition-colors placeholder:text-muted focus:border-brand/50 focus:ring-2 focus:ring-brand/10"
+          class="h-9 w-full rounded-full border border-line bg-surface pl-9 pr-4 text-[12.5px] text-ink outline-none transition-colors placeholder:text-muted focus:border-brand/50 focus:ring-2 focus:ring-brand/10 sm:w-[248px]"
           @keydown.enter="search"
         />
       </div>
@@ -286,9 +286,9 @@ watch(currentKey, () => {
       </span>
     </div>
 
-    <div class="mt-4 grid gap-4 xl:grid-cols-[1fr_340px]">
+    <div class="mt-4 grid grid-cols-[minmax(0,1fr)] gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
       <section class="surface relative overflow-hidden">
-        <div class="h-[600px] w-full">
+        <div class="h-[420px] w-full sm:h-[500px] xl:h-[600px]">
           <GraphCanvas
             :nodes="nodes"
             :links="links"
@@ -300,7 +300,7 @@ watch(currentKey, () => {
         </div>
 
         <div
-          class="pointer-events-none absolute bottom-4 left-4 flex flex-wrap items-center gap-3 rounded-full border border-line bg-surface/85 px-3.5 py-1.5 text-[10px] text-muted shadow-[0_8px_24px_-16px_rgba(16,24,40,0.22)] backdrop-blur-xl"
+          class="pointer-events-none absolute bottom-3 left-3 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center gap-2.5 rounded-full border border-line bg-surface/85 px-3 py-1.5 text-[9.5px] text-muted shadow-[0_8px_24px_-16px_rgba(16,24,40,0.22)] backdrop-blur-xl sm:bottom-4 sm:left-4 sm:gap-3 sm:px-3.5 sm:text-[10px]"
         >
           <span class="flex items-center gap-1.5">
             <span class="relative h-[2px] w-5 rounded-full bg-[#3A6BE0]">
@@ -317,7 +317,7 @@ watch(currentKey, () => {
         </div>
       </section>
 
-      <section class="surface flex min-h-[600px] flex-col overflow-hidden">
+      <section class="surface flex flex-col overflow-hidden xl:min-h-[600px]">
         <header class="flex items-center justify-between border-b border-line px-4 py-3">
           <div class="flex items-center gap-2">
             <Waypoints :size="14" class="text-muted" />

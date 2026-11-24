@@ -24,6 +24,8 @@ const emit = defineEmits<{ (e: 'select', id: string): void }>()
 const el = ref<HTMLDivElement | null>(null)
 let chart: ECharts | null = null
 let observer: ResizeObserver | null = null
+/** 画布实际宽度：手机上要缩小字号与初始缩放，否则节点标签会挤成一团。 */
+const chartWidth = ref(0)
 
 const { isDark } = useTheme()
 
@@ -96,6 +98,7 @@ const focus = computed(() => {
 
 function buildOption() {
   const t = theme.value
+  const compact = chartWidth.value > 0 && chartWidth.value < 560
   return {
     backgroundColor: 'transparent',
     tooltip: {
@@ -112,6 +115,7 @@ function buildOption() {
         type: 'graph',
         layout: 'none',
         roam: true,
+        zoom: compact ? 0.68 : 1,
         draggable: false,
         cursor: 'pointer',
         categories: props.categories,
@@ -127,7 +131,7 @@ function buildOption() {
             category: n.category,
             x,
             y,
-            symbolSize: 11 + Math.sqrt(n.value) * 3.2 + (isSelected ? 3 : 0),
+            symbolSize: (11 + Math.sqrt(n.value) * 3.2 + (isSelected ? 3 : 0)) * (compact ? 0.9 : 1),
             itemStyle: {
               color: masteryPalette[masteryOf(n.id)],
               borderColor: isSelected ? t.edges.prerequisite : t.nodeBorder,
@@ -139,8 +143,8 @@ function buildOption() {
             label: {
               show: true,
               position: 'right',
-              distance: 9,
-              fontSize: 11,
+              distance: compact ? 6 : 9,
+              fontSize: compact ? 9.5 : 11,
               fontWeight: isSelected ? 600 : 400,
               color: active ? t.label : t.labelDim,
             },
@@ -183,13 +187,25 @@ function buildOption() {
 
 onMounted(() => {
   if (!el.value) return
+  chartWidth.value = el.value.clientWidth
   chart = init(el.value)
   chart.setOption(buildOption())
   chart.on('click', (params) => {
     const p = params as unknown as { dataType?: string; data?: { id?: string } }
     if (p.dataType === 'node' && p.data?.id) emit('select', p.data.id)
   })
-  observer = new ResizeObserver(() => chart?.resize())
+  observer = new ResizeObserver(() => {
+    if (!el.value) return
+    const width = el.value.clientWidth
+    const wasCompact = chartWidth.value > 0 && chartWidth.value < 560
+    const nowCompact = width > 0 && width < 560
+    // 只在跨断点时重绘，普通尺寸变化仅做 resize，避免拖拽缩放时抖动
+    if (wasCompact !== nowCompact) {
+      chartWidth.value = width
+      chart?.setOption(buildOption(), true)
+    }
+    chart?.resize()
+  })
   observer.observe(el.value)
   highlightSelected()
 })
