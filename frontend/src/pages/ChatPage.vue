@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import MarkdownIt from 'markdown-it'
 import {
@@ -21,6 +21,7 @@ import {
   Sparkles,
   StickyNote,
   Wrench,
+  X,
   Zap,
 } from 'lucide-vue-next'
 import type { Artifact, SourceRef, Task } from '@/mock/workbench'
@@ -60,6 +61,18 @@ const tabs = [
   { key: 'artifact' as const, label: '产物', icon: Package },
   { key: 'source' as const, label: '来源', icon: Quote },
 ]
+
+/** 手机上左右两栏收进抽屉：任务列表一份，计划/产物/来源一份。 */
+const mobilePanel = ref<'' | 'tasks' | 'detail'>('')
+
+function openTasks() {
+  mobilePanel.value = 'tasks'
+}
+
+function openDetail(key: 'plan' | 'artifact' | 'source' = tab.value) {
+  tab.value = key
+  mobilePanel.value = 'detail'
+}
 
 const groups = computed(() => {
   const map = new Map<string, Task[]>()
@@ -133,6 +146,7 @@ function notify(text: string) {
 }
 
 function newTask() {
+  mobilePanel.value = ''
   draft.value = true
   selectedId.value = ''
   input.value = ''
@@ -182,9 +196,17 @@ function send() {
   void ask(text)
 }
 
+/** Esc 收起移动端抽屉 / 底部面板 */
+function onKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' && mobilePanel.value) mobilePanel.value = ''
+}
+
 onMounted(() => {
   void loadSessions()
+  window.addEventListener('keydown', onKeydown)
 })
+
+onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 watch(currentKey, () => {
   sessions.value = []
@@ -259,6 +281,7 @@ async function loadSessions() {
 }
 
 async function openTask(task: Task) {
+  mobilePanel.value = ''
   draft.value = false
   selectedId.value = task.id
   if (demoIds.has(task.id)) return
@@ -521,10 +544,28 @@ function applyEvent(task: Task, type: string, payload: RunEventPayload) {
 
 <template>
   <div class="flex h-full min-h-0">
-    <aside class="hidden w-[232px] shrink-0 flex-col border-r border-line bg-shell xl:flex">
+    <div
+      v-if="mobilePanel"
+      class="fixed inset-0 z-30 bg-ink/30 backdrop-blur-[2px] xl:hidden"
+      @click="mobilePanel = ''"
+    />
+
+    <aside
+      class="flex-col border-r border-line bg-shell"
+      :class="
+        mobilePanel === 'tasks'
+          ? 'fixed inset-y-0 left-0 z-40 flex w-[82%] max-w-[320px] shadow-[0_0_40px_rgba(16,24,40,0.25)]'
+          : 'hidden xl:flex xl:w-[232px] xl:shrink-0'
+      "
+    >
       <div class="flex h-12 items-center justify-between px-3.5">
         <span class="text-[11.5px] font-medium text-muted">任务</span>
-        <button class="icon-btn" aria-label="新建任务" @click="newTask"><Plus :size="15" /></button>
+        <div class="flex items-center gap-1">
+          <button class="icon-btn" aria-label="新建任务" @click="newTask"><Plus :size="15" /></button>
+          <button class="icon-btn xl:hidden" aria-label="关闭任务列表" @click="mobilePanel = ''">
+            <X :size="16" />
+          </button>
+        </div>
       </div>
 
       <div class="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
@@ -589,7 +630,7 @@ function applyEvent(task: Task, type: string, payload: RunEventPayload) {
     </aside>
 
     <section class="flex min-w-0 flex-1 flex-col bg-surface">
-      <header class="flex h-12 shrink-0 items-center justify-between gap-3 border-b border-line px-5">
+      <header class="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-line px-3 sm:gap-3 sm:px-5">
         <div class="flex min-w-0 items-center gap-2">
           <span class="grid h-6 w-6 shrink-0 place-items-center rounded-[8px] bg-brand-soft text-brand">
             <Sparkles :size="13" />
@@ -625,7 +666,7 @@ function applyEvent(task: Task, type: string, payload: RunEventPayload) {
         </div>
       </header>
 
-      <div class="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+      <div class="min-h-0 flex-1 overflow-y-auto px-3.5 py-4 sm:px-5 sm:py-5">
         <div v-if="draft || !activeTask" class="mx-auto flex h-full w-full max-w-[720px] flex-col justify-center pb-10">
           <div class="grid h-11 w-11 place-items-center rounded-[13px] bg-brand-soft text-brand">
             <Sparkles :size="20" />
@@ -836,8 +877,42 @@ function applyEvent(task: Task, type: string, payload: RunEventPayload) {
         </div>
       </div>
 
-      <div class="shrink-0 border-t border-line bg-surface px-5 py-3">
+      <div class="shrink-0 border-t border-line bg-surface px-3 pb-2.5 pt-2 sm:px-5 sm:py-3">
         <div class="mx-auto w-full max-w-[800px]">
+          <!-- 手机：左栏任务、右栏计划/产物/来源改成可点开的抽屉 -->
+          <div class="scroll-x mb-2 flex items-center gap-1.5 overflow-x-auto xl:hidden">
+            <button
+              class="pill-btn h-7 shrink-0 border border-line bg-tint-soft px-2.5 text-[10.5px] text-subink"
+              @click="openTasks"
+            >
+              <ListChecks :size="11" />
+              任务 {{ localTasks.length }}
+            </button>
+            <button
+              class="pill-btn h-7 shrink-0 border border-line bg-tint-soft px-2.5 text-[10.5px] text-subink"
+              @click="openDetail('plan')"
+            >
+              计划
+            </button>
+            <button
+              class="pill-btn h-7 shrink-0 border border-line bg-tint-soft px-2.5 text-[10.5px] text-subink"
+              @click="openDetail('artifact')"
+            >
+              产物 {{ activeTask?.artifacts.length ?? 0 }}
+            </button>
+            <button
+              class="pill-btn h-7 shrink-0 border border-line bg-tint-soft px-2.5 text-[10.5px] text-subink"
+              @click="openDetail('source')"
+            >
+              来源 {{ activeTask?.sources.length ?? 0 }}
+            </button>
+            <span
+              v-if="activeTask && activeTask.status === 'waiting_approval'"
+              class="shrink-0 rounded-full bg-warn/12 px-2 py-0.5 text-[9.5px] text-warn"
+            >
+              待审批
+            </span>
+          </div>
           <div class="flex items-end gap-2 rounded-[16px] border border-line bg-surface px-3 py-2.5 shadow-[0_2px_10px_-6px_rgba(16,24,40,0.12)] focus-within:border-brand/45 focus-within:ring-2 focus-within:ring-brand/10">
             <button class="icon-btn h-7 w-7" aria-label="引用文档或知识点" @click="notify('已打开引用选择器')">
               <AtSign :size="14" />
@@ -857,14 +932,22 @@ function applyEvent(task: Task, type: string, payload: RunEventPayload) {
               <ArrowUp :size="13" />
             </button>
           </div>
-          <div class="mt-1.5 text-[9.5px] text-muted">
+          <div class="mt-1.5 hidden text-[9.5px] text-muted sm:block">
             <span>Enter 发送 · Shift+Enter 换行</span>
           </div>
         </div>
       </div>
     </section>
 
-    <aside class="hidden w-[320px] shrink-0 flex-col border-l border-line bg-shell xl:flex">
+    <aside
+      class="flex-col border-line bg-shell"
+      :class="
+        mobilePanel === 'detail'
+          ? 'fixed inset-x-0 bottom-0 z-40 flex max-h-[82vh] flex-col rounded-t-[20px] border-t shadow-[0_-14px_44px_rgba(16,24,40,0.28)]'
+          : 'hidden xl:flex xl:w-[320px] xl:shrink-0 xl:border-l'
+      "
+    >
+      <div class="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-line-strong xl:hidden" />
       <div class="flex h-12 shrink-0 items-center gap-0.5 border-b border-line px-2">
         <button
           v-for="t in tabs"
@@ -881,6 +964,9 @@ function applyEvent(task: Task, type: string, payload: RunEventPayload) {
           <span v-if="t.key === 'source' && activeTask" class="text-[9px] text-muted">
             {{ activeTask.sources.length }}
           </span>
+        </button>
+        <button class="icon-btn h-7 w-7 xl:hidden" aria-label="收起详情" @click="mobilePanel = ''">
+          <X :size="15" />
         </button>
       </div>
 
@@ -995,7 +1081,7 @@ function applyEvent(task: Task, type: string, payload: RunEventPayload) {
 
     <div
       v-if="toast"
-      class="pointer-events-none fixed bottom-20 left-1/2 z-50 -translate-x-1/2 rounded-full bg-ink px-3.5 py-1.5 text-[11px] text-canvas shadow-lg"
+      class="pointer-events-none fixed bottom-36 left-1/2 lg:bottom-20 z-50 -translate-x-1/2 rounded-full bg-ink px-3.5 py-1.5 text-[11px] text-canvas shadow-lg"
     >
       {{ toast }}
     </div>
