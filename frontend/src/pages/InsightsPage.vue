@@ -18,7 +18,6 @@ import type {
   LearningTrend,
 } from '@/api/client'
 import { insights } from '@/mock/workbench'
-import { STUDENT_OPTIONS } from '@/composables/useStudent'
 
 const router = useRouter()
 const range = ref<'week' | 'month'>('week')
@@ -36,7 +35,7 @@ const trend = ref<LearningTrend | null>(null)
 const studentOptions = computed(() =>
   students.value.map((item) => ({
     key: item.user_key,
-    name: STUDENT_OPTIONS.find((option) => option.key === item.user_key)?.name ?? item.user_key,
+    name: item.display_name || item.user_key,
     attempts: item.attempts,
     rate: item.rate,
   })),

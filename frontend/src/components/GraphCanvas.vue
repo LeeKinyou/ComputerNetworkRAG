@@ -35,27 +35,31 @@ const masteryPalette: Record<Mastery, string> = {
   new: '#9AA6BE',
 }
 
-const LAYOUT: Record<string, [number, number]> = {
-  ipv4: [0, 0],
-  osi: [-35, -95],
-  ethernet: [55, -170],
-  csma: [175, -150],
-  mac: [265, -75],
-  arp: [180, -55],
-  mask: [165, 90],
-  cidr: [285, 140],
-  route: [75, 165],
-  nat: [-140, 175],
-  icmp: [-120, 110],
-  tcp: [-185, 40],
-  udp: [-170, -55],
-  handshake: [-265, 120],
-  congestion: [-300, 30],
-  dns: [-280, -95],
-  http: [-190, -150],
-  tls: [-80, -175],
-  crypto: [-155, -235],
-  firewall: [30, 220],
+/** 章节描边色：只做簇的视觉分隔，不参与掌握度编码。 */
+const CHAPTER_TONES = ['#5B7BD5', '#4C9AA8', '#7C6BC4', '#C08A4E', '#5F9E78', '#B06A72']
+
+/** 章节列布局：每章一列、列内等距纵排，标签不会互相压住，50+ 节点也读得清。 */
+function buildPositions(): Record<string, [number, number]> {
+  const groups: Record<number, GraphNode[]> = {}
+  for (const node of props.nodes) {
+    const key = Number(node.category) || 0
+    ;(groups[key] ??= []).push(node)
+  }
+  const keys = Object.keys(groups)
+    .map(Number)
+    .sort((a, b) => a - b)
+  const colGap = 152
+  const rowGap = 44
+  const startX = -((keys.length - 1) * colGap) / 2
+  const positions: Record<string, [number, number]> = {}
+  keys.forEach((key, columnIndex) => {
+    const list = groups[key]
+    list.forEach((node, index) => {
+      const y = (index - (list.length - 1) / 2) * rowGap
+      positions[node.id] = [startX + columnIndex * colGap + (index % 2 ? 12 : -12), y]
+    })
+  })
+  return positions
 }
 
 const theme = computed(() =>
@@ -99,6 +103,19 @@ const focus = computed(() => {
 function buildOption() {
   const t = theme.value
   const compact = chartWidth.value > 0 && chartWidth.value < 560
+  const positions = buildPositions()
+  // 每章只给度数最高的三个概念挂常驻标签，其余靠悬停与右栏，避免 53 个名字糊成一团
+  const topLabels = new Set<string>()
+  const byChapter: Record<number, GraphNode[]> = {}
+  for (const node of props.nodes) {
+    const key = Number(node.category) || 0
+    ;(byChapter[key] ??= []).push(node)
+  }
+  for (const list of Object.values(byChapter)) {
+    for (const node of [...list].sort((a, b) => b.value - a.value).slice(0, 3)) {
+      topLabels.add(node.id)
+    }
+  }
   return {
     backgroundColor: 'transparent',
     tooltip: {
@@ -115,13 +132,13 @@ function buildOption() {
         type: 'graph',
         layout: 'none',
         roam: true,
-        zoom: compact ? 0.68 : 1,
+        zoom: compact ? 0.42 : 0.9,
+        scaleLimit: { min: 0.3, max: 2.6 },
         draggable: false,
         cursor: 'pointer',
         categories: props.categories,
-        data: props.nodes.map((n, i) => {
-          const fallbackAngle = (i / props.nodes.length) * Math.PI * 2 - Math.PI / 2
-          const [x, y] = LAYOUT[n.id] ?? [Math.cos(fallbackAngle) * 260, Math.sin(fallbackAngle) * 170]
+        data: props.nodes.map((n) => {
+          const [x, y] = positions[n.id] ?? [0, 0]
           const active = !focus.value || focus.value.has(n.id)
           const isSelected = n.id === props.selectedId
           return {
@@ -131,20 +148,22 @@ function buildOption() {
             category: n.category,
             x,
             y,
-            symbolSize: (11 + Math.sqrt(n.value) * 3.2 + (isSelected ? 3 : 0)) * (compact ? 0.9 : 1),
+            symbolSize: (12 + Math.sqrt(n.value) * 3.6 + (isSelected ? 3 : 0)) * (compact ? 0.9 : 1),
             itemStyle: {
               color: masteryPalette[masteryOf(n.id)],
-              borderColor: isSelected ? t.edges.prerequisite : t.nodeBorder,
-              borderWidth: isSelected ? 2.5 : 1.5,
-              shadowBlur: isSelected ? 14 : 6,
+              borderColor: isSelected
+                ? t.edges.prerequisite
+                : CHAPTER_TONES[Number(n.category) % CHAPTER_TONES.length] ?? t.nodeBorder,
+              borderWidth: isSelected ? 2.5 : 1.4,
+              shadowBlur: isSelected ? 14 : 5,
               shadowColor: isSelected ? 'rgba(76,125,240,0.32)' : t.nodeShadow,
-              opacity: active ? 1 : 0.55,
+              opacity: active ? 1 : 0.5,
             },
             label: {
-              show: true,
-              position: 'right',
+              show: isSelected || topLabels.has(n.id) || Boolean(focus.value && active),
+              position: Number(n.category) >= 3 ? 'left' : 'right',
               distance: compact ? 6 : 9,
-              fontSize: compact ? 9.5 : 11,
+              fontSize: compact ? 9.5 : 10.5,
               fontWeight: isSelected ? 600 : 400,
               color: active ? t.label : t.labelDim,
             },
@@ -166,11 +185,12 @@ function buildOption() {
               width: adjacent ? 2.2 : kind === 'prerequisite' ? 1.6 : 1.1,
               type: kind === 'contains' ? 'dashed' : kind === 'related' ? 'dotted' : 'solid',
               curveness: 0.06,
-              opacity: dimmed ? 0.22 : adjacent ? 1 : kind === 'related' ? 0.75 : 0.95,
+              opacity: dimmed ? 0.12 : adjacent ? 1 : kind === 'related' ? 0.48 : 0.82,
             },
           }
         }),
         lineStyle: { curveness: 0.06 },
+        layoutAnimation: false,
         emphasis: {
           focus: 'none',
           scale: 1.12,

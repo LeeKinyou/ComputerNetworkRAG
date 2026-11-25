@@ -2,12 +2,14 @@
 
 import { ref } from 'vue'
 import { api } from '@/api/client'
-import { lockStudent, setStudent, unlockStudent } from '@/composables/useStudent'
+import { loadStudents, lockStudent, resetStudent, unlockStudent } from '@/composables/useStudent'
 
 export interface AuthUser {
   username: string
   role: 'teacher' | 'student'
   user_key: string
+  display_name: string
+  note?: string
 }
 
 interface MeResponse {
@@ -26,13 +28,15 @@ const authEnabled = ref(true)
 const ready = ref(false)
 
 /** 学生登录后把「当前学生」钉在自己身上；教师恢复自由切换（仅本次登录重置视角）。 */
-function bindIdentity(account: AuthUser | null, resetTeacherView = false) {
+async function bindIdentity(account: AuthUser | null, resetTeacherView = false) {
   if (!account) return
-  if (account.role === 'student') lockStudent(account.user_key)
-  else {
-    unlockStudent()
-    if (resetTeacherView) setStudent('demo_user')
+  await loadStudents()
+  if (account.role === 'student') {
+    lockStudent(account.user_key, account.display_name)
+    return
   }
+  unlockStudent()
+  if (resetTeacherView) resetStudent()
 }
 
 async function refresh(): Promise<boolean> {
@@ -40,7 +44,7 @@ async function refresh(): Promise<boolean> {
     const me = await api.get<MeResponse>('/auth/me')
     authEnabled.value = me.auth_enabled
     user.value = me.user
-    bindIdentity(me.user)
+    await bindIdentity(me.user)
     return me.authenticated
   } catch {
     user.value = null
@@ -53,7 +57,7 @@ async function refresh(): Promise<boolean> {
 async function login(username: string, password: string): Promise<AuthUser> {
   const result = await api.post<LoginResponse>('/auth/login', { username, password })
   user.value = result.user
-  bindIdentity(result.user, true)
+  await bindIdentity(result.user, true)
   return result.user
 }
 

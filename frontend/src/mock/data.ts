@@ -462,15 +462,7 @@ export const ragPassages: RagPassage[] = [
   },
 ]
 
-export const profile = {
-  name: '李金阳',
-  initials: '李',
-  school: '重庆邮电大学',
-  major: '计算机科学与技术 · 研一',
-  role: '课程助教 / 演示环境管理员',
-  joined: '2026-09-01',
-  email: 'leekinyou@example.com',
-}
+/** 个人资料改由 `/auth/me` 与 `/users` 返回，mock 里不再保留姓名等账号信息。 */
 
 export const learningStats = [
   { label: '累计问答', value: '128', hint: '本周 23 次' },

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { Check, Clock, FileUp, LoaderCircle, Plus, X } from 'lucide-vue-next'
+import { Camera, Check, Clock, FileUp, LoaderCircle, Plus, Upload, X } from 'lucide-vue-next'
 import { api } from '@/api/client'
 import type {
   AssignmentDetail,
@@ -9,6 +9,7 @@ import type {
   AssignmentRow,
   SubmissionDto,
   SubmissionRoster,
+  UploadedImage,
 } from '@/api/client'
 import { useAuth } from '@/composables/useAuth'
 
@@ -17,6 +18,10 @@ const { user, authEnabled } = useAuth()
 
 const teacher = computed(() => user.value?.role === 'teacher' || !authEnabled.value)
 
+/** 手机/平板调相机拍照，桌面端走本地文件选择——capture 在桌面浏览器会被忽略，文案也要跟着换。 */
+const isMobile = /Android|iPhone|iPad|iPod|HarmonyOS|Mobile/i.test(navigator.userAgent)
+  || (navigator.maxTouchPoints > 1 && /Macintosh/i.test(navigator.userAgent))
+
 const rows = ref<AssignmentRow[]>([])
 const pendingCount = ref(0)
 const loading = ref(false)
@@ -24,6 +29,10 @@ const detail = ref<AssignmentDetail | null>(null)
 const currentId = ref('')
 
 const answers = ref<Record<string, string>>({})
+const images = ref<Record<string, string[]>>({})
+const fileInput = ref<HTMLInputElement | null>(null)
+const uploadingItem = ref('')
+const uploading = ref(false)
 const submission = ref<SubmissionDto | null>(null)
 const editing = ref(false)
 const submitting = ref(false)
@@ -53,17 +62,14 @@ const TEMPLATE = `# 新作业
 `
 const form = ref({ title: '', due: '', content: TEMPLATE })
 
-const NAMES: Record<string, string> = {
-  demo_user: '李金阳',
-  stu_lin: '林晓',
-  stu_zhao: '赵一鸣',
-  teacher: '教师',
-}
+/** 名册姓名由后端 `/users` 与提交记录带回，前端不再维护映射表。 */
 
 const SOURCE_LABEL: Record<string, string> = {
   llm: '模型批改',
+  vision: '图片批改',
   rule: '规则初评',
   mixed: '模型 + 规则',
+  pending: '待复核',
   teacher: '教师已改',
 }
 
@@ -143,9 +149,11 @@ async function open(id: string) {
     submission.value = data.my_submission ?? null
     editing.value = !teacher.value && !submission.value
     answers.value = {}
+    images.value = {}
     for (const item of data.items) {
       const answered = submission.value?.items.find((entry) => entry.item_id === item.id)
       answers.value[item.id] = answered?.answer ?? ''
+      images.value[item.id] = answered?.image_urls ?? []
     }
     await loadRoster(id)
   } catch (exc) {
@@ -161,7 +169,11 @@ async function submitWork() {
   errorMsg.value = ''
   try {
     submission.value = await api.post<SubmissionDto>(`/assignments/${current.id}/submissions`, {
-      items: current.items.map((item) => ({ item_id: item.id, answer: answers.value[item.id] ?? '' })),
+      items: current.items.map((item) => ({
+        item_id: item.id,
+        answer: answers.value[item.id] ?? '',
+        image_paths: images.value[item.id] ?? [],
+      })),
     })
     editing.value = false
     await loadRows()
@@ -170,6 +182,40 @@ async function submitWork() {
   } finally {
     submitting.value = false
   }
+}
+
+/** 移动端调后置摄像头，桌面端打开本地文件选择器。 */
+function chooseImage(itemId: string) {
+  uploadingItem.value = itemId
+  fileInput.value?.click()
+}
+
+async function onFilePicked(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file || !uploadingItem.value) return
+  if (file.size > 20 * 1024 * 1024) {
+    errorMsg.value = '单张图片不能超过 20MB'
+    return
+  }
+  const itemId = uploadingItem.value
+  uploading.value = true
+  errorMsg.value = ''
+  try {
+    const form = new FormData()
+    form.append('file', file)
+    const uploaded = await api.upload<UploadedImage>('/uploads/images', form)
+    images.value[itemId] = [...(images.value[itemId] ?? []), uploaded.path].slice(0, 3)
+  } catch (exc) {
+    errorMsg.value = exc instanceof Error ? exc.message : '图片上传失败'
+  } finally {
+    uploading.value = false
+  }
+}
+
+function removeImage(itemId: string, index: number) {
+  images.value[itemId] = (images.value[itemId] ?? []).filter((_, i) => i !== index)
 }
 
 function startEditing() {
@@ -365,8 +411,8 @@ async function loadChapters() {
   }
 }
 
-function studentName(userKey: string) {
-  return NAMES[userKey] ?? userKey
+function studentName(userKey: string, displayName?: string) {
+  return displayName || userKey
 }
 
 async function boot() {
@@ -544,7 +590,7 @@ onMounted(boot)
                 class="flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left transition hover:bg-tint-soft"
                 @click="openSubmission(row.submission_id)"
               >
-                <span class="text-[11.5px] text-ink">{{ studentName(row.user_key) }}</span>
+                <span class="text-[11.5px] text-ink">{{ studentName(row.user_key, row.display_name) }}</span>
                 <span class="flex items-center gap-2 text-[10px] text-muted">
                   <span v-if="row.needs_review_count" class="text-warn">{{ row.needs_review_count }} 题待复核</span>
                   <span class="font-mono">{{ row.score }}/{{ row.max_score }}</span>
@@ -556,7 +602,7 @@ onMounted(boot)
             <div v-if="selectedSubmission" class="mt-3 rounded-xl border border-brand/30 bg-surface p-4">
               <div class="flex items-center justify-between">
                 <span class="text-[12px] font-medium">
-                  {{ studentName(selectedSubmission.user_key) }} · {{ selectedSubmission.score }} / {{ selectedSubmission.max_score }}
+                  {{ studentName(selectedSubmission.user_key, selectedSubmission.display_name) }} · {{ selectedSubmission.score }} / {{ selectedSubmission.max_score }}
                   <span class="ml-1 text-[10px] font-normal text-muted">{{ SOURCE_LABEL[selectedSubmission.source] }}</span>
                 </span>
                 <button class="grid h-6 w-6 place-items-center rounded-full text-muted hover:bg-tint" @click="selectedSubmission = null">
@@ -569,7 +615,14 @@ onMounted(boot)
                   <span class="text-[11.5px] font-medium">{{ item.ordinal }}. {{ item.stem }}</span>
                   <span class="shrink-0 text-[10px] text-muted">{{ item.score }}/{{ item.max_score }}</span>
                 </div>
-                <p class="mt-1 text-[10.5px] leading-relaxed text-muted">作答：{{ item.answer || '（空）' }}</p>
+                <p class="mt-1 text-[10.5px] leading-relaxed text-muted">
+                  作答：{{ item.answer || (item.image_urls?.length ? '仅提交照片' : '（空）') }}
+                </p>
+                <div v-if="item.image_urls?.length" class="mt-1.5 flex flex-wrap gap-2">
+                  <a v-for="url in item.image_urls" :key="url" :href="url" target="_blank" rel="noreferrer">
+                    <img :src="url" class="h-16 w-16 rounded-md border border-line object-cover" alt="作答照片" />
+                  </a>
+                </div>
                 <p class="mt-1 text-[10.5px] leading-relaxed text-subink">{{ item.feedback }}</p>
                 <div class="mt-2 flex flex-wrap items-center gap-2">
                   <input
@@ -602,6 +655,14 @@ onMounted(boot)
         <!-- 学生：答题 -->
         <template v-else>
           <div v-if="editing" class="mt-4 space-y-3">
+            <input
+              ref="fileInput"
+              type="file"
+              accept="image/*"
+              :capture="isMobile ? 'environment' : undefined"
+              class="hidden"
+              @change="onFilePicked"
+            />
             <div v-for="item in detail.items" :key="item.id" class="rounded-xl border border-line p-4">
               <div class="flex items-baseline justify-between gap-3">
                 <p class="text-[12.5px] font-medium leading-relaxed">{{ item.ordinal }}. {{ item.stem }}</p>
@@ -613,6 +674,31 @@ onMounted(boot)
                 class="mt-2 w-full rounded-lg border border-line bg-surface px-3 py-2 text-[12px] leading-relaxed outline-none transition focus:border-brand/60"
                 placeholder="写解答，计算题写出关键步骤"
               />
+              <div class="mt-2 flex flex-wrap items-center gap-2">
+                <div v-for="(url, index) in images[item.id] ?? []" :key="url" class="relative">
+                  <img :src="url" class="h-16 w-16 rounded-lg border border-line object-cover" alt="作答照片" />
+                  <button
+                    type="button"
+                    class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-ink text-[10px] text-white"
+                    @click="removeImage(item.id, index)"
+                  >
+                    ×
+                  </button>
+                </div>
+                <button
+                  v-if="(images[item.id]?.length ?? 0) < 3"
+                  type="button"
+                  class="flex h-16 items-center justify-center gap-1.5 rounded-lg border border-dashed border-line text-[10px] text-muted transition hover:border-brand/50 hover:text-subink disabled:opacity-60"
+                  :class="isMobile ? 'w-16 flex-col' : 'px-3.5'"
+                  :disabled="uploading && uploadingItem === item.id"
+                  @click="chooseImage(item.id)"
+                >
+                  <LoaderCircle v-if="uploading && uploadingItem === item.id" :size="14" class="animate-spin" />
+                  <Camera v-else-if="isMobile" :size="14" />
+                  <Upload v-else :size="14" />
+                  {{ isMobile ? '拍照' : '上传图片' }}
+                </button>
+              </div>
             </div>
             <div class="flex items-center justify-between">
               <span v-if="submission" class="text-[10.5px] text-muted">重新提交会覆盖上一次作答。</span>
@@ -645,7 +731,14 @@ onMounted(boot)
                 <p class="text-[12px] font-medium leading-relaxed">{{ item.ordinal }}. {{ item.stem }}</p>
                 <span class="shrink-0 text-[10px] text-muted">{{ item.score }}/{{ item.max_score }}</span>
               </div>
-              <p class="mt-1.5 text-[10.5px] leading-relaxed text-muted">作答：{{ item.answer || '（空）' }}</p>
+              <p class="mt-1.5 text-[10.5px] leading-relaxed text-muted">
+                作答：{{ item.answer || (item.image_urls?.length ? '仅提交照片' : '（空）') }}
+              </p>
+              <div v-if="item.image_urls?.length" class="mt-2 flex flex-wrap gap-2">
+                <a v-for="url in item.image_urls" :key="url" :href="url" target="_blank" rel="noreferrer">
+                  <img :src="url" class="h-20 w-20 rounded-lg border border-line object-cover" alt="作答照片" />
+                </a>
+              </div>
               <p class="mt-1 text-[11px] leading-relaxed text-subink">{{ item.feedback }}</p>
               <div class="mt-2 flex flex-wrap gap-1">
                 <span
@@ -660,9 +753,9 @@ onMounted(boot)
               <div class="mt-1.5 flex items-center gap-2">
                 <span
                   class="rounded-full px-1.5 py-0.5 text-[9.5px]"
-                  :class="VERDICT[item.verdict]?.cls ?? 'bg-tint text-muted'"
+                  :class="item.source === 'pending' ? 'bg-warn/10 text-warn' : VERDICT[item.verdict]?.cls ?? 'bg-tint text-muted'"
                 >
-                  {{ VERDICT[item.verdict]?.label ?? item.verdict }}
+                  {{ item.source === 'pending' ? '待判' : VERDICT[item.verdict]?.label ?? item.verdict }}
                 </span>
                 <span v-if="item.needs_review" class="text-[9.5px] text-warn">待复核</span>
               </div>

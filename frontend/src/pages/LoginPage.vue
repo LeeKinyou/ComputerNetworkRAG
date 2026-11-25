@@ -18,7 +18,7 @@ const demoOpen = ref(false)
 /** 演示账号：只保留名字，说明性文案全部去掉。 */
 const demoAccounts = [
   { label: '教师', username: 'teacher', password: 'teacher2026' },
-  { label: '李金阳', username: 'demo_user', password: 'demo2026' },
+  { label: '李金洋', username: 'demo_user', password: 'demo2026' },
   { label: '林晓', username: 'stu_lin', password: 'lin2026' },
   { label: '赵一鸣', username: 'stu_zhao', password: 'zhao2026' },
 ]

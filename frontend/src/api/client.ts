@@ -44,6 +44,7 @@ export interface AnalyticsConcept {
 
 export interface AnalyticsStudent {
   user_key: string
+  display_name: string
   attempts: number
   correct: number
   rate: number
@@ -498,12 +499,21 @@ export interface SubmissionItemDto {
   points: GradedPoint[]
   source: string
   needs_review: boolean
+  image_urls?: string[]
+}
+
+/** 作答照片上传后的落点，直接拼到站点根即可展示。 */
+export interface UploadedImage {
+  path: string
+  url: string
+  size: number
 }
 
 export interface SubmissionDto {
   submission_id: string
   assignment_id: string
   user_key: string
+  display_name: string
   status: string
   score: number
   max_score: number
@@ -518,6 +528,7 @@ export interface SubmissionDto {
 export interface SubmissionRow {
   submission_id: string
   user_key: string
+  display_name: string
   status: string
   score: number
   max_score: number

@@ -91,6 +91,9 @@ const masteryTone: Record<string, string> = {
 
 const difficultyLabel: Record<string, string> = { easy: '基础', medium: '进阶', hard: '挑战' }
 
+/** 与 GraphCanvas 的章节描边色保持一致，让六列图谱能和图例对上。 */
+const CHAPTER_TONES = ['#5B7BD5', '#4C9AA8', '#7C6BC4', '#C08A4E', '#5F9E78', '#B06A72']
+
 const related = computed(() => {
   if (!selected.value) return []
   return links.value
@@ -286,6 +289,20 @@ watch(currentKey, () => {
       </span>
     </div>
 
+    <div v-if="chapters.length" class="mt-2.5 flex flex-wrap gap-x-3 gap-y-1.5">
+      <span
+        v-for="(chapter, index) in chapters"
+        :key="chapter.id"
+        class="flex items-center gap-1.5 text-[10px] text-muted"
+      >
+        <span
+          class="h-2 w-2 rounded-full border"
+          :style="{ borderColor: CHAPTER_TONES[index % CHAPTER_TONES.length], backgroundColor: `${CHAPTER_TONES[index % CHAPTER_TONES.length]}26` }"
+        />
+        {{ chapter.title }}
+      </span>
+    </div>
+
     <div class="mt-4 grid grid-cols-[minmax(0,1fr)] gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
       <section class="surface relative overflow-hidden">
         <div class="h-[420px] w-full sm:h-[500px] xl:h-[600px]">
@@ -365,7 +382,7 @@ watch(currentKey, () => {
                 {{ ref }}
               </li>
               <li v-if="!selected.refs.length" class="text-[10.5px] text-muted">
-                正在读取出处…
+                教材暂未收录这条的出处的引用，可先去右侧题目练一遍。
               </li>
             </ul>
 
