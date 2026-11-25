@@ -51,6 +51,10 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://api.deepseek.com"
     llm_api_key: str = ""
     llm_model: str = "deepseek-flash"
+    # 图片作业走独立的多模态端点；三项留空时图片只存档，不改动文本批改链路。
+    llm_vision_model: str = ""
+    llm_vision_base_url: str = ""
+    llm_vision_api_key: str = ""
     embedding_base_url: str = ""
     embedding_api_key: str = ""
     embedding_model: str = ""
@@ -60,6 +64,13 @@ class Settings(BaseSettings):
     @property
     def llm_ready(self) -> bool:
         return bool(self.llm_api_key.strip())
+
+    @property
+    def vision_ready(self) -> bool:
+        """配了多模态模型且能拿到密钥，才认为能直接判照片。"""
+        return bool(self.llm_vision_model.strip()) and bool(
+            (self.llm_vision_api_key or self.llm_api_key).strip()
+        )
 
     @property
     def runtime_dir(self) -> Path:

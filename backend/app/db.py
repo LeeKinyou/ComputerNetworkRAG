@@ -84,6 +84,10 @@ def _ensure_columns(connection) -> None:
                     "ALTER TABLE chat_sessions ADD COLUMN user_key VARCHAR(64) DEFAULT 'demo_user'"
                 )
             )
+    if "submission_items" in tables:
+        columns = {column["name"] for column in inspector.get_columns("submission_items")}
+        if "image_paths" not in columns:
+            connection.execute(text("ALTER TABLE submission_items ADD COLUMN image_paths TEXT DEFAULT ''"))
 
 
 def _sync_run_owner(connection) -> None:

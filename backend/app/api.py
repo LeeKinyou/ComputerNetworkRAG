@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import random
+import uuid
 from collections import Counter
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, Response, UploadFile
@@ -17,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent import TERMINAL, emit, execute_run, start_run
 from app.auth import (
+    analytics_scope,
     authenticate,
     clear_session_cookie,
     current_account,
@@ -29,7 +32,7 @@ from app.config import settings
 from app.db import get_session
 from app.ingest import IngestError, ingest_document
 from app.assignment_import import AssignmentImportError, parse_assignment_text
-from app.grader import grade_item, rule_grade
+from app.grader import grade_item, pending_result, rule_grade
 from app.models import (
     Assignment,
     AssignmentItem,
@@ -47,6 +50,7 @@ from app.models import (
     RunStep,
     Submission,
     SubmissionItem,
+    User,
 )
 from app.practice import answer_summary
 from app.profile import build_profile
@@ -56,6 +60,18 @@ from app.tools import get_concept
 from app.util import iso, new_id, utcnow
 
 router = APIRouter(prefix="/api/v2")
+
+MEDIA_ROOT = Path(__file__).resolve().parent / "media"
+UPLOAD_ROOT = MEDIA_ROOT / "uploads"
+UPLOAD_TYPES = {
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/heic": ".heic",
+    "image/heif": ".heif",
+}
+MAX_IMAGES_PER_ITEM = 3
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 
@@ -115,22 +131,52 @@ class LoginIn(BaseModel):
     password: str = Field(min_length=1, max_length=128)
 
 
+async def _user_profile(session: AsyncSession, user_key: str) -> dict:
+    """账号展示资料：库里没有记录时回退到 user_key，保证旧账号也能登录。"""
+    row = await session.get(User, user_key)
+    return {
+        "display_name": row.display_name if row else user_key,
+        "note": row.note if row else "",
+    }
+
+
 @router.post("/auth/login")
-async def login(payload: LoginIn, response: Response) -> dict:
+async def login(payload: LoginIn, response: Response, session: SessionDep) -> dict:
     account = authenticate(payload.username, payload.password)
     if account is None:
         raise _fail(401, "INVALID_CREDENTIALS", "用户名或密码错误")
     set_session_cookie(response, account)
-    return {"authenticated": True, "user": account.as_dict()}
+    profile = await _user_profile(session, account.user_key)
+    return {"authenticated": True, "user": account.as_dict() | profile}
 
 
 @router.get("/auth/me")
-async def auth_me(request: Request) -> dict:
+async def auth_me(request: Request, session: SessionDep) -> dict:
     account = current_account(request)
+    profile = await _user_profile(session, account.user_key) if account else None
     return {
         "authenticated": bool(account),
         "auth_enabled": settings.auth_enabled,
-        "user": account.as_dict() if account else None,
+        "user": (account.as_dict() | profile) if account else None,
+    }
+
+
+@router.get("/users")
+async def list_users(request: Request, session: SessionDep) -> dict:
+    """账号名单：教师看全部，学生只看到自己。
+
+    前端的学生切换器据此渲染，不再依赖写死的姓名表。
+    """
+    account = current_account(request)
+    stmt = select(User).order_by(User.role, User.user_key)
+    if account is not None and account.role != "teacher":
+        stmt = stmt.where(User.user_key == account.user_key)
+    rows = (await session.execute(stmt)).scalars().all()
+    return {
+        "items": [
+            {"user_key": row.user_key, "display_name": row.display_name, "role": row.role, "note": row.note}
+            for row in rows
+        ]
     }
 
 
@@ -246,7 +292,13 @@ async def concept_detail(concept_id: str, session: SessionDep) -> dict:
     result = await get_concept(session, concept_id)
     if result.status != "ok":
         raise _fail(404, "NOT_FOUND", "知识点不存在")
-    related = retriever.search(result.data["title"], top_k=2)
+    # 只在片段正文里真的出现概念名时才算出处，避免低分检索把无关章节塞给前端
+    title = result.data["title"]
+    related = [
+        row
+        for row in retriever.search(title, top_k=4)
+        if title.lower() in f"{row.get('title', '')}{row.get('excerpt', '')}".lower()
+    ][:2]
     return {**result.data, "sources": related}
 
 
@@ -888,7 +940,7 @@ async def list_questions(
 async def recommended_questions(
     session: SessionDep,
     course_id: str = COURSE_ID,
-    user_key: str = "demo_user",
+    user_key: str = Depends(scoped_user_key),
     limit: int = Query(10, ge=1, le=30),
 ) -> dict:
     """按掌握度组卷：未练过的知识点优先，其次正确率偏低的概念，并给出推荐理由。"""
@@ -951,7 +1003,7 @@ async def recommended_questions(
 async def analytics_concepts(
     session: SessionDep,
     course_id: str = COURSE_ID,
-    user_key: str | None = None,
+    user_key: str | None = Depends(analytics_scope),
 ) -> dict:
     """概念粒度学情：教师端看全班掌握分布，学生端可只看自己。"""
     concepts = (await session.execute(select(Concept).where(Concept.course_id == course_id))).scalars().all()
@@ -1039,6 +1091,9 @@ async def analytics_students(request: Request, session: SessionDep, course_id: s
     attempts = (
         await session.execute(select(Attempt).where(Attempt.course_id == course_id))
     ).scalars().all()
+    user_names = {
+        row.user_key: row.display_name for row in (await session.execute(select(User))).scalars().all()
+    }
     buckets: dict[str, dict[str, object]] = {}
     for attempt in attempts:
         bucket = buckets.setdefault(
@@ -1058,6 +1113,7 @@ async def analytics_students(request: Request, session: SessionDep, course_id: s
     items = [
         {
             "user_key": user_key,
+            "display_name": user_names.get(user_key, user_key),
             "attempts": int(bucket["attempts"]),  # type: ignore[arg-type]
             "correct": int(bucket["correct"]),  # type: ignore[arg-type]
             "rate": round(int(bucket["correct"]) * 100 / int(bucket["attempts"]))
@@ -1119,7 +1175,7 @@ async def create_attempt(payload: AttemptIn, request: Request, session: SessionD
 @router.get("/practice/attempts")
 async def list_attempts(
     session: SessionDep,
-    user_key: str = "demo_user",
+    user_key: str = Depends(scoped_user_key),
     limit: int = Query(20, ge=1, le=100),
 ) -> dict:
     rows = (
@@ -1154,7 +1210,7 @@ async def list_attempts(
 async def practice_stats(
     session: SessionDep,
     course_id: str = COURSE_ID,
-    user_key: str = "demo_user",
+    user_key: str = Depends(scoped_user_key),
 ) -> dict:
     attempts = (
         await session.execute(
@@ -1791,8 +1847,10 @@ def _summarize_source(sources: list[str]) -> str:
         return "rule"
     if "teacher" in unique:
         return "teacher"
-    if unique == {"llm"}:
-        return "llm"
+    if unique == {"pending"}:
+        return "pending"
+    if unique <= {"llm", "vision"}:
+        return "vision" if "vision" in unique else "llm"
     if unique == {"rule"}:
         return "rule"
     return "mixed"
@@ -1811,10 +1869,13 @@ async def _persist_grade(
     submission: Submission,
     items: list[AssignmentItem],
     answers: dict[str, str],
+    images: dict[str, list[Path]] | None,
     results: list[dict],
 ) -> None:
     await session.execute(delete(SubmissionItem).where(SubmissionItem.submission_id == submission.id))
+    images = images or {}
     for item, result in zip(items, results):
+        paths = images.get(item.id, [])
         session.add(
             SubmissionItem(
                 id=new_id(),
@@ -1828,6 +1889,9 @@ async def _persist_grade(
                 points=result.get("points", []),
                 source=result.get("source", "rule"),
                 needs_review=bool(result.get("needs_review")),
+                image_paths=json.dumps(
+                    [f"/media/{p.relative_to(MEDIA_ROOT).as_posix()}" for p in paths]
+                ),
             )
         )
     submission.score = sum(int(result["score"]) for result in results)
@@ -1843,9 +1907,14 @@ async def _persist_grade(
     )
 
 
-async def _grade_all(items: list[AssignmentItem], answers: dict[str, str]) -> list[dict]:
+async def _grade_all(
+    items: list[AssignmentItem],
+    answers: dict[str, str],
+    images: dict[str, list[Path]] | None = None,
+) -> list[dict]:
     """单份作业内按 3 路并发批改；单题异常退规则，不影响其他题。"""
     semaphore = asyncio.Semaphore(3)
+    images = images or {}
 
     async def one(item: AssignmentItem) -> dict:
         data = {
@@ -1857,13 +1926,32 @@ async def _grade_all(items: list[AssignmentItem], answers: dict[str, str]) -> li
         }
         async with semaphore:
             try:
-                return await asyncio.wait_for(grade_item(data, answers.get(item.id, "")), timeout=40)
+                return await asyncio.wait_for(
+                    grade_item(data, answers.get(item.id, ""), images.get(item.id)), timeout=40
+                )
             except Exception:  # noqa: BLE001
+                if images.get(item.id) and not answers.get(item.id, "").strip():
+                    return pending_result(data)
                 fallback = rule_grade(data, answers.get(item.id, ""))
                 fallback["fallback"] = True
                 return fallback
 
     return list(await asyncio.gather(*(one(item) for item in items)))
+
+
+def _image_urls(raw: str) -> list[str]:
+    """只回传 /media/uploads 下的地址，避免把历史脏数据直接塞给前端。"""
+    try:
+        data = json.loads(raw or "[]")
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(data, list):
+        return []
+    return [
+        str(item)
+        for item in data
+        if isinstance(item, str) and item.startswith("/media/uploads/")
+    ][:MAX_IMAGES_PER_ITEM]
 
 
 async def _submission_payload(session: AsyncSession, submission: Submission) -> dict:
@@ -1881,10 +1969,12 @@ async def _submission_payload(session: AsyncSession, submission: Submission) -> 
         ).scalars().all()
     }
     ordered = sorted(rows, key=lambda row: item_rows.get(row.item_id).ordinal if row.item_id in item_rows else 0)
+    profile = await _user_profile(session, submission.user_key)
     return {
         "submission_id": submission.id,
         "assignment_id": submission.assignment_id,
         "user_key": submission.user_key,
+        "display_name": profile["display_name"],
         "status": submission.status,
         "score": submission.score,
         "max_score": submission.max_score,
@@ -1907,6 +1997,7 @@ async def _submission_payload(session: AsyncSession, submission: Submission) -> 
                 "points": row.points or [],
                 "source": row.source,
                 "needs_review": row.needs_review,
+                "image_urls": _image_urls(row.image_paths),
             }
             for row in ordered
         ],
@@ -1957,6 +2048,30 @@ async def _create_assignment(
             )
         )
     return assignment
+
+
+@router.post("/uploads/images", status_code=201)
+async def upload_answer_image(
+    request: Request,
+    file: UploadFile = File(...),
+    user_key: str = Depends(scoped_user_key),
+) -> dict:
+    """作答照片落盘：只收位图、限制单张大小，返回可直接渲染的 /media 地址。"""
+    content_type = (file.content_type or "").lower().split(";")[0].strip()
+    ext = UPLOAD_TYPES.get(content_type)
+    if not ext:
+        raise _fail(400, "UNSUPPORTED_IMAGE_TYPE", "只支持 JPG / PNG / WebP / HEIC 图片")
+    data = await file.read()
+    if not data:
+        raise _fail(400, "EMPTY_FILE", "图片内容为空")
+    if len(data) > settings.max_upload_bytes:
+        limit_mb = settings.max_upload_bytes // (1024 * 1024)
+        raise _fail(413, "FILE_TOO_LARGE", f"单张图片不能超过 {limit_mb} MB")
+    UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+    name = f"{datetime.now(UTC).strftime('%Y%m%d')}-{uuid.uuid4().hex[:16]}{ext}"
+    (UPLOAD_ROOT / name).write_bytes(data)
+    url = f"/media/uploads/{name}"
+    return {"path": url, "url": url, "size": len(data), "user_key": user_key}
 
 
 @router.get("/assignments")
@@ -2237,11 +2352,26 @@ async def submit_assignment(
     if assignment.status == "draft":
         raise _fail(400, "ASSIGNMENT_NOT_PUBLISHED", "作业还未发布")
 
-    answers = {
-        str(entry.get("item_id")): str(entry.get("answer") or "")[:4000]
-        for entry in payload.items
-        if isinstance(entry, dict) and entry.get("item_id")
-    }
+    answers: dict[str, str] = {}
+    images: dict[str, list[Path]] = {}
+    for entry in payload.items:
+        if not isinstance(entry, dict):
+            continue
+        item_id = str(entry.get("item_id") or "")
+        if not item_id:
+            continue
+        answers[item_id] = str(entry.get("answer") or "")[:4000]
+        paths: list[Path] = []
+        for raw in (entry.get("image_paths") or [])[:MAX_IMAGES_PER_ITEM]:
+            if not isinstance(raw, str) or not raw.startswith("/media/uploads/"):
+                continue
+            candidate = (MEDIA_ROOT / raw.removeprefix("/media/")).resolve()
+            if MEDIA_ROOT.resolve() not in candidate.parents:
+                continue
+            if candidate.is_file() and candidate.suffix.lower() in {".jpg", ".png", ".webp", ".heic", ".heif"}:
+                paths.append(candidate)
+        if paths:
+            images[item_id] = paths
 
     existing = (
         await session.execute(
@@ -2263,19 +2393,19 @@ async def submit_assignment(
     await session.flush()
 
     try:
-        results = await asyncio.wait_for(_grade_all(items, answers), timeout=55)
+        results = await asyncio.wait_for(_grade_all(items, answers, images), timeout=55)
     except asyncio.TimeoutError:
-        results = [
-            rule_grade(
-                {"type": item.type, "stem": item.stem, "reference": item.reference, "rubric": item.rubric or [], "score": item.score},
-                answers.get(item.id, ""),
-            )
-            for item in items
-        ]
-        for result in results:
-            result["fallback"] = True
+        results = []
+        for item in items:
+            data = {"type": item.type, "stem": item.stem, "reference": item.reference, "rubric": item.rubric or [], "score": item.score}
+            if images.get(item.id) and not answers.get(item.id, "").strip():
+                results.append(pending_result(data))
+            else:
+                fallback = rule_grade(data, answers.get(item.id, ""))
+                fallback["fallback"] = True
+                results.append(fallback)
 
-    await _persist_grade(session, submission, items, answers, results)
+    await _persist_grade(session, submission, items, answers, images, results)
     await session.commit()
     return await _submission_payload(session, submission)
 
@@ -2307,6 +2437,9 @@ async def list_submissions(
         )
     ).all():
         review_counts[submission_id] = int(count)
+    user_names = {
+        row.user_key: row.display_name for row in (await session.execute(select(User))).scalars().all()
+    }
     return {
         "assignment": {
             "id": assignment.id,
@@ -2318,6 +2451,7 @@ async def list_submissions(
             {
                 "submission_id": sub.id,
                 "user_key": sub.user_key,
+                "display_name": user_names.get(sub.user_key, sub.user_key),
                 "status": sub.status,
                 "score": sub.score,
                 "max_score": sub.max_score,
@@ -2413,18 +2547,26 @@ async def regrade_submission(
         await session.execute(select(SubmissionItem).where(SubmissionItem.submission_id == submission.id))
     ).scalars().all()
     answers = {row.item_id: row.answer_text for row in rows}
+    images: dict[str, list[Path]] = {}
+    for row in rows:
+        for url in _image_urls(row.image_paths):
+            path = MEDIA_ROOT / url.removeprefix("/media/")
+            if path.is_file():
+                images.setdefault(row.item_id, []).append(path)
 
     try:
-        results = await asyncio.wait_for(_grade_all(items, answers), timeout=55)
+        results = await asyncio.wait_for(_grade_all(items, answers, images), timeout=55)
     except asyncio.TimeoutError:
-        results = [
-            rule_grade(
-                {"type": item.type, "stem": item.stem, "reference": item.reference, "rubric": item.rubric or [], "score": item.score},
-                answers.get(item.id, ""),
-            )
-            for item in items
-        ]
-    await _persist_grade(session, submission, items, answers, results)
+        results = []
+        for item in items:
+            data = {"type": item.type, "stem": item.stem, "reference": item.reference, "rubric": item.rubric or [], "score": item.score}
+            if images.get(item.id) and not answers.get(item.id, "").strip():
+                results.append(pending_result(data))
+            else:
+                fallback = rule_grade(data, answers.get(item.id, ""))
+                fallback["fallback"] = True
+                results.append(fallback)
+    await _persist_grade(session, submission, items, answers, images, results)
     await session.commit()
     return await _submission_payload(session, submission)
 

@@ -8,9 +8,12 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import math
+import mimetypes
 import re
+from pathlib import Path
 from typing import Any
 
 from app.config import settings
@@ -147,9 +150,9 @@ JSON 结构：
  "feedback": "评语", "confidence": 0~1 的小数}}"""
 
 
-def build_prompt(item: dict, answer: str) -> str:
+def build_prompt(item: dict, answer: str, has_image: bool = False) -> str:
     rubric = "\n".join(f"- {p['text']}（{p['score']} 分）" for p in _rubric_points(item))
-    return PROMPT_TEMPLATE.format(
+    prompt = PROMPT_TEMPLATE.format(
         kind="计算题" if item.get("type") == "calc" else "简答题",
         score=int(item.get("score") or 10),
         stem=item.get("stem", ""),
@@ -157,6 +160,9 @@ def build_prompt(item: dict, answer: str) -> str:
         rubric=rubric,
         answer=answer or "（空）",
     )
+    if has_image:
+        prompt += "\n\n补充说明：学生作答以照片形式提交，请先识别图片中的手写文字与演算过程，再按评分要点给分。"
+    return prompt
 
 
 def parse_payload(raw: str) -> dict[str, Any]:
@@ -172,7 +178,7 @@ def parse_payload(raw: str) -> dict[str, Any]:
     return payload
 
 
-def normalize(payload: dict, item: dict) -> dict:
+def normalize(payload: dict, item: dict, source: str = "llm") -> dict:
     """把模型结果对齐到本地评分要点：分数以要点上限为准，verdict 由分数推导。"""
     rubric = _rubric_points(item)
     max_score = max(1, int(item.get("score") or sum(p["score"] for p in rubric)))
@@ -209,7 +215,7 @@ def normalize(payload: dict, item: dict) -> dict:
         "verdict": _verdict(score, max_score),
         "points": points,
         "feedback": feedback[:MAX_FEEDBACK],
-        "source": "llm",
+        "source": source,
         "needs_review": confidence < 0.5,
         "confidence": round(confidence, 2),
     }
@@ -230,18 +236,63 @@ async def _call_llm(prompt: str) -> str:
     return str(result.content)
 
 
-async def grade_item(item: dict, answer: str) -> dict:
+def _image_data_url(path: Path) -> str:
+    mime = mimetypes.guess_type(path.name)[0] or "image/jpeg"
+    return f"data:{mime};base64,{base64.b64encode(path.read_bytes()).decode()}"
+
+
+async def _call_vision(prompt: str, image_paths: list[Path]) -> str:
+    """图片走独立多模态端点；只取前三张，避免单题请求体过大。"""
+    from langchain_core.messages import HumanMessage
+    from langchain_openai import ChatOpenAI
+
+    model = ChatOpenAI(
+        model=settings.llm_vision_model,
+        api_key=settings.llm_vision_api_key or settings.llm_api_key,
+        base_url=settings.llm_vision_base_url or settings.llm_base_url,
+        temperature=0,
+        timeout=60,
+    )
+    content: list[dict] = [{"type": "text", "text": prompt}]
+    for path in image_paths[:3]:
+        content.append({"type": "image_url", "image_url": {"url": _image_data_url(path)}})
+    result = await model.ainvoke([HumanMessage(content=content)])
+    return str(result.content)
+
+
+def pending_result(item: dict) -> dict:
+    """只有照片又没有多模态端点时不硬判 0 分，标记待复核，避免误伤学生。"""
+    max_score = max(1, int(item.get("score") or 10))
+    return {
+        "score": 0,
+        "max_score": max_score,
+        "verdict": "wrong",
+        "points": [],
+        "feedback": "已收到作答照片，当前未配置图片识别模型，待教师复核",
+        "source": "pending",
+        "needs_review": True,
+        "confidence": 0.0,
+    }
+
+
+async def grade_item(item: dict, answer: str, image_paths: list[Path] | None = None) -> dict:
     """批一题：模型优先，两次解析失败或异常一律退回规则。"""
     answer = (answer or "").strip()
+    images = image_paths or []
+    if images and not settings.vision_ready and not answer:
+        return pending_result(item)
     if not settings.llm_ready:
         return rule_grade(item, answer)
 
-    prompt = build_prompt(item, answer)
+    prompt = build_prompt(item, answer, has_image=bool(images))
     last_error = ""
     for attempt in range(2):
         try:
-            raw = await _call_llm(prompt if attempt == 0 else prompt + "\n\n再次强调：只输出 JSON。")
-            return normalize(parse_payload(raw), item)
+            if images:
+                raw = await _call_vision(prompt, images)
+            else:
+                raw = await _call_llm(prompt if attempt == 0 else prompt + "\n\n再次强调：只输出 JSON。")
+            return normalize(parse_payload(raw), item, source="vision" if images else "llm")
         except Exception as exc:  # noqa: BLE001
             last_error = f"{type(exc).__name__}: {exc}"[:120]
 

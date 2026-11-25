@@ -155,6 +155,22 @@ def scoped_user_key(request: Request, user_key: str | None = None) -> str:
     return account.user_key
 
 
+def analytics_scope(request: Request, user_key: str | None = None) -> str | None:
+    """学情分析的作用域：教师不传就是全班，学生只能看自己。
+
+    与 `scoped_user_key` 的区别在于“不传”对教师的语义：这里 `None` 表示全班汇总，
+    而不是教师本人；学生无论传不传都会被收口到自己的 key。
+    """
+    account = current_account(request)
+    if account is None:
+        return user_key
+    if account.role == "teacher":
+        return user_key
+    if user_key and user_key != account.user_key:
+        raise fail(403, "FORBIDDEN", "只能查看自己的数据")
+    return account.user_key
+
+
 def ensure_owner(account: Account | None, user_key: str | None) -> str:
     """校验 body 里的 user_key（创建会话 / 发起运行 / 提交作答）。"""
     if account is None:

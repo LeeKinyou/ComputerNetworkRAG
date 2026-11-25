@@ -63,7 +63,11 @@ async def test_student_sees_only_self(auth_on):
         assert (await login(client, "stu_lin", "lin-pass")).status_code == 200
 
         me = (await client.get("/api/v2/auth/me")).json()
-        assert me["user"] == {"username": "stu_lin", "role": "student", "user_key": "stu_lin"}
+        assert me["user"]["username"] == "stu_lin"
+        assert me["user"]["role"] == "student"
+        assert me["user"]["user_key"] == "stu_lin"
+        # 库里没有账号资料时，展示名回退到 user_key
+        assert me["user"]["display_name"] == "stu_lin"
 
         # 不传 user_key：按当前身份落到 stu_lin
         own = await client.get("/api/v2/learning/next")
