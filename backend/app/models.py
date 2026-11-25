@@ -17,6 +17,21 @@ class Base(DeclarativeBase):
     pass
 
 
+class User(Base):
+    """账号资料：`user_key` 与 `.env` 的 AUTH_ACCOUNTS 对齐，姓名等展示信息只存在这里。
+
+    账号口令仍由环境变量提供，不落库；这张表只解决“显示名 / 备注”不能硬编码在前端的问题。
+    """
+
+    __tablename__ = "users"
+
+    user_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(64))
+    role: Mapped[str] = mapped_column(String(16), default="student")
+    note: Mapped[str] = mapped_column(String(128), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class Course(Base):
     __tablename__ = "courses"
 
@@ -250,5 +265,6 @@ class SubmissionItem(Base):
     verdict: Mapped[str] = mapped_column(String(16), default="wrong")  # correct / partial / wrong
     feedback: Mapped[str] = mapped_column(Text, default="")
     points: Mapped[list] = mapped_column(JSON, default=list)
-    source: Mapped[str] = mapped_column(String(16), default="llm")
+    source: Mapped[str] = mapped_column(String(16), default="llm")  # llm / vision / rule / pending / teacher
     needs_review: Mapped[bool] = mapped_column(Boolean, default=False)
+    image_paths: Mapped[str] = mapped_column(Text, default="")  # JSON 数组，存 /media 下的相对路径
