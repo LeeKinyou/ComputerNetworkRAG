@@ -21,5 +21,8 @@ coverage/
 frontend/shots/
 backend/app/static/
 
+# 学生上传的作答照片，只留在服务器本地
+backend/app/media/uploads/
+
 # Existing local reference directory
 /b4809-main/
